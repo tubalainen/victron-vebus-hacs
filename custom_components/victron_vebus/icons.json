@@ -1,0 +1,141 @@
+{
+  "entity": {
+    "sensor": {
+      "device_state": {
+        "default": "mdi:state-machine"
+      },
+      "charge_state": {
+        "default": "mdi:battery-charging"
+      },
+      "mode": {
+        "default": "mdi:power-settings"
+      },
+      "front_switch_mode": {
+        "default": "mdi:toggle-switch-variant"
+      },
+      "overload_alarm": {
+        "default": "mdi:alert-outline",
+        "state": {
+          "ok": "mdi:check-circle-outline",
+          "alarm": "mdi:alert"
+        }
+      },
+      "low_battery_alarm": {
+        "default": "mdi:battery-alert-variant-outline",
+        "state": {
+          "ok": "mdi:battery-check-outline",
+          "alarm": "mdi:battery-alert-variant"
+        }
+      },
+      "temperature_alarm": {
+        "default": "mdi:thermometer-alert",
+        "state": {
+          "ok": "mdi:thermometer-check"
+        }
+      },
+      "active_ac_input": {
+        "default": "mdi:transmission-tower-import"
+      },
+      "battery_ripple": {
+        "default": "mdi:sine-wave"
+      },
+      "battery_capacity": {
+        "default": "mdi:battery-high"
+      },
+      "firmware_version": {
+        "default": "mdi:chip"
+      },
+      "interface_version": {
+        "default": "mdi:usb-port"
+      }
+    },
+    "binary_sensor": {
+      "ac_input_connected": {
+        "default": "mdi:transmission-tower-off",
+        "state": {
+          "on": "mdi:transmission-tower"
+        }
+      },
+      "relay": {
+        "default": "mdi:electric-switch"
+      },
+      "ignore_ac_input": {
+        "default": "mdi:transmission-tower-off"
+      },
+      "remote_panel_detected": {
+        "default": "mdi:remote"
+      },
+      "led_mains": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on"
+        }
+      },
+      "led_absorption": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on"
+        }
+      },
+      "led_bulk": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on"
+        }
+      },
+      "led_float": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on"
+        }
+      },
+      "led_inverter": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on"
+        }
+      },
+      "led_overload": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on"
+        }
+      },
+      "led_low_battery": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on"
+        }
+      },
+      "led_temperature": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on"
+        }
+      }
+    },
+    "switch": {
+      "keep_awake": {
+        "default": "mdi:sleep",
+        "state": {
+          "on": "mdi:sleep-off"
+        }
+      }
+    },
+    "select": {
+      "remote_mode": {
+        "default": "mdi:power-settings"
+      }
+    },
+    "number": {
+      "remote_current_limit": {
+        "default": "mdi:current-ac"
+      }
+    }
+  },
+  "services": {
+    "set_remote_panel_state": {
+      "service": "mdi:remote"
+    }
+  }
+}

@@ -1,0 +1,383 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect the MK3 interface",
+        "description": "How is the MK3-USB interface connected?",
+        "menu_options": {
+          "serial": "Select a serial port",
+          "manual": "Enter a device path or URL"
+        }
+      },
+      "serial": {
+        "title": "Select serial port",
+        "data": {
+          "device": "Device"
+        },
+        "data_description": {
+          "device": "The serial port of the MK3-USB interface."
+        }
+      },
+      "manual": {
+        "title": "Enter device",
+        "data": {
+          "device": "Device"
+        },
+        "data_description": {
+          "device": "Device path such as /dev/serial/by-id/usb-VictronEnergy_MK3-USB_Interface_..., or a URL such as socket://192.168.1.10:4001 for ser2net."
+        }
+      },
+      "usb_confirm": {
+        "description": "Do you want to set up the Victron VE.Bus device connected to the MK3 interface at {device}?"
+      },
+      "reconfigure": {
+        "title": "Change device",
+        "data": {
+          "device": "Device"
+        },
+        "data_description": {
+          "device": "New device path or URL of the MK3 interface."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to open the serial port.",
+      "no_response": "The interface or the VE.Bus device did not respond. Make sure the device is switched on and connected to the MK3.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This interface is already configured.",
+      "unique_id_mismatch": "This is a different MK3 interface than the one configured.",
+      "reconfigure_successful": "The device was updated successfully."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Polling interval",
+          "enable_controls": "Enable control entities"
+        },
+        "data_description": {
+          "scan_interval": "Seconds between polls. At 2400 baud one poll takes about a second.",
+          "enable_controls": "Create the mode select, the AC input current limit and the set_remote_panel_state action. These act as a remote panel and change how the device operates."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "ac_input_voltage": {
+        "name": "AC input voltage"
+      },
+      "ac_input_voltage_phase": {
+        "name": "AC input voltage {phase}"
+      },
+      "ac_input_current": {
+        "name": "AC input current"
+      },
+      "ac_input_current_phase": {
+        "name": "AC input current {phase}"
+      },
+      "ac_input_frequency": {
+        "name": "AC input frequency"
+      },
+      "ac_input_frequency_phase": {
+        "name": "AC input frequency {phase}"
+      },
+      "ac_output_voltage": {
+        "name": "AC output voltage"
+      },
+      "ac_output_voltage_phase": {
+        "name": "AC output voltage {phase}"
+      },
+      "ac_output_current": {
+        "name": "AC output current"
+      },
+      "ac_output_current_phase": {
+        "name": "AC output current {phase}"
+      },
+      "ac_input_power": {
+        "name": "AC input power"
+      },
+      "ac_output_power": {
+        "name": "AC output power"
+      },
+      "ac_output_frequency": {
+        "name": "AC output frequency"
+      },
+      "battery_voltage": {
+        "name": "Battery voltage"
+      },
+      "battery_current": {
+        "name": "Battery current"
+      },
+      "battery_power": {
+        "name": "Battery power"
+      },
+      "charger_current": {
+        "name": "Charger current"
+      },
+      "inverter_current": {
+        "name": "Inverter DC current"
+      },
+      "battery_ripple": {
+        "name": "Battery ripple voltage"
+      },
+      "state_of_charge": {
+        "name": "State of charge"
+      },
+      "device_state": {
+        "name": "Device state",
+        "state": {
+          "down": "Down",
+          "startup": "Startup",
+          "off": "Off",
+          "slave": "Slave",
+          "invert_full": "Inverting (full)",
+          "invert_half": "Inverting (half)",
+          "invert_aes": "Inverting (AES)",
+          "power_assist": "Power assist",
+          "bypass": "Passthru",
+          "charge": "Charging"
+        }
+      },
+      "charge_state": {
+        "name": "Charge state",
+        "state": {
+          "not_charging": "Not charging",
+          "init": "Initialising",
+          "bulk": "Bulk",
+          "absorption": "Absorption",
+          "float": "Float",
+          "storage": "Storage",
+          "repeated_absorption": "Repeated absorption",
+          "forced_absorption": "Forced absorption",
+          "equalise": "Equalise",
+          "bulk_stopped": "Bulk stopped"
+        }
+      },
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "charger_only": "Charger only",
+          "inverter_only": "Inverter only"
+        }
+      },
+      "front_switch_mode": {
+        "name": "Front switch",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "charger_only": "Charger only",
+          "inverter_only": "Inverter only"
+        }
+      },
+      "overload_alarm": {
+        "name": "Overload alarm",
+        "state": {
+          "ok": "OK",
+          "warning": "Warning",
+          "alarm": "Alarm"
+        }
+      },
+      "low_battery_alarm": {
+        "name": "Low battery alarm",
+        "state": {
+          "ok": "OK",
+          "warning": "Warning",
+          "alarm": "Alarm"
+        }
+      },
+      "temperature_alarm": {
+        "name": "Temperature alarm",
+        "state": {
+          "ok": "OK",
+          "warning": "Warning",
+          "alarm": "Alarm"
+        }
+      },
+      "active_ac_input": {
+        "name": "Active AC input",
+        "state": {
+          "ac_in_1": "AC input 1",
+          "ac_in_2": "AC input 2",
+          "ac_in_3": "AC input 3",
+          "ac_in_4": "AC input 4"
+        }
+      },
+      "ac_input_current_limit": {
+        "name": "AC input current limit"
+      },
+      "ac_input_current_limit_minimum": {
+        "name": "AC input current limit minimum"
+      },
+      "ac_input_current_limit_maximum": {
+        "name": "AC input current limit maximum"
+      },
+      "absorption_voltage": {
+        "name": "Absorption voltage"
+      },
+      "float_voltage": {
+        "name": "Float voltage"
+      },
+      "charge_current_limit": {
+        "name": "Charge current limit"
+      },
+      "configured_ac_input_current_limit": {
+        "name": "Configured AC input current limit"
+      },
+      "battery_capacity": {
+        "name": "Battery capacity"
+      },
+      "firmware_version": {
+        "name": "Firmware version"
+      },
+      "interface_version": {
+        "name": "MK3 interface version"
+      }
+    },
+    "binary_sensor": {
+      "ac_input_connected": {
+        "name": "AC input connected"
+      },
+      "relay": {
+        "name": "Relay"
+      },
+      "ignore_ac_input": {
+        "name": "Ignore AC input"
+      },
+      "remote_panel_detected": {
+        "name": "Remote panel detected"
+      },
+      "led_mains": {
+        "name": "Mains LED",
+        "state_attributes": {
+          "blinking": {
+            "name": "Blinking"
+          }
+        }
+      },
+      "led_absorption": {
+        "name": "Absorption LED",
+        "state_attributes": {
+          "blinking": {
+            "name": "Blinking"
+          }
+        }
+      },
+      "led_bulk": {
+        "name": "Bulk LED",
+        "state_attributes": {
+          "blinking": {
+            "name": "Blinking"
+          }
+        }
+      },
+      "led_float": {
+        "name": "Float LED",
+        "state_attributes": {
+          "blinking": {
+            "name": "Blinking"
+          }
+        }
+      },
+      "led_inverter": {
+        "name": "Inverter LED",
+        "state_attributes": {
+          "blinking": {
+            "name": "Blinking"
+          }
+        }
+      },
+      "led_overload": {
+        "name": "Overload LED",
+        "state_attributes": {
+          "blinking": {
+            "name": "Blinking"
+          }
+        }
+      },
+      "led_low_battery": {
+        "name": "Low battery LED",
+        "state_attributes": {
+          "blinking": {
+            "name": "Blinking"
+          }
+        }
+      },
+      "led_temperature": {
+        "name": "Temperature LED",
+        "state_attributes": {
+          "blinking": {
+            "name": "Blinking"
+          }
+        }
+      }
+    },
+    "switch": {
+      "keep_awake": {
+        "name": "Keep awake"
+      }
+    },
+    "select": {
+      "remote_mode": {
+        "name": "Remote mode",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "charger_only": "Charger only",
+          "inverter_only": "Inverter only"
+        }
+      }
+    },
+    "number": {
+      "remote_current_limit": {
+        "name": "Remote AC input current limit"
+      }
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "Cannot communicate with the VE.Bus device on {device}: {error}"
+    },
+    "command_failed": {
+      "message": "The VE.Bus device did not accept the command: {error}"
+    }
+  },
+  "issues": {
+    "device_unreachable": {
+      "title": "VE.Bus device unreachable",
+      "description": "The VE.Bus device on {device} has not responded for more than 5 minutes ({error}).\n\nIf the device was switched off it may have gone to sleep, which also cuts the power of the MK3 interface. Switch it on at the device, and keep the \"Keep awake\" switch on to prevent this. Also check the cable between the MK3 and the device."
+    }
+  },
+  "services": {
+    "set_remote_panel_state": {
+      "name": "Set remote panel state",
+      "description": "Sets the mode and optionally the AC input current limit, like a remote panel would.",
+      "fields": {
+        "mode": {
+          "name": "Mode",
+          "description": "The mode to switch to."
+        },
+        "current_limit": {
+          "name": "Current limit",
+          "description": "AC input current limit in ampere. Leave empty to keep the current limit. With PowerAssist off, 0 puts the device in passthru."
+        }
+      }
+    }
+  },
+  "selector": {
+    "mode": {
+      "options": {
+        "off": "Off",
+        "on": "On",
+        "charger_only": "Charger only",
+        "inverter_only": "Inverter only"
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Victron VE.Bus (MK3)",
+  "homeassistant": "2026.5.0",
+  "render_readme": true
+}
