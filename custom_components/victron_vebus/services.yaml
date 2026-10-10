@@ -1,0 +1,25 @@
+set_remote_panel_state:
+  target:
+    entity:
+      integration: victron_vebus
+      domain: select
+  fields:
+    mode:
+      required: true
+      selector:
+        select:
+          translation_key: mode
+          options:
+            - "on"
+            - "off"
+            - charger_only
+            - inverter_only
+    current_limit:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          unit_of_measurement: A
+          mode: box

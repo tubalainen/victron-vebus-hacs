@@ -1,0 +1,22 @@
+{
+  "domain": "victron_vebus",
+  "name": "Victron VE.Bus (MK3)",
+  "codeowners": ["@tubalainen"],
+  "config_flow": true,
+  "dependencies": ["usb"],
+  "documentation": "https://github.com/tubalainen/victron-vebus-hacs",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/tubalainen/victron-vebus-hacs/issues",
+  "loggers": ["custom_components.victron_vebus"],
+  "requirements": ["serialx>=1.7.0"],
+  "usb": [
+    {
+      "vid": "0403",
+      "pid": "6015",
+      "manufacturer": "*victron*",
+      "description": "*mk3*"
+    }
+  ],
+  "version": "0.1.0"
+}
