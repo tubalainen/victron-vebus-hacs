@@ -1,0 +1,56 @@
+[project]
+name = "victron-vebus-hacs"
+version = "0.1.0"
+description = "Home Assistant integration for Victron VE.Bus devices via the MK3-USB interface"
+requires-python = ">=3.14"
+license = "MIT"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["custom_components.victron_vebus"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "ASYNC", "PL", "PT", "D"]
+ignore = [
+    "D203", "D213", "D105", "D107",
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+    "ASYNC109",  # request helpers take an explicit per-command timeout
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "PLR2004", "SLF001", "PT018", "ASYNC110"]
+"tools/**" = ["D", "T201", "E501", "E402"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components"]
+combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.14"
+check_untyped_defs = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = "homeassistant.*"
+implicit_reexport = true
+
+[[tool.mypy.overrides]]
+module = "custom_components.victron_vebus.vebus.*"
+strict = true
+
+# voluptuous is an alias of probatio in Home Assistant >= 2026.9; keep using it
+# for compatibility with older releases and ignore the resulting type mismatch.
+[[tool.mypy.overrides]]
+module = ["custom_components.victron_vebus.config_flow", "custom_components.victron_vebus.services"]
+disable_error_code = ["arg-type", "dict-item"]

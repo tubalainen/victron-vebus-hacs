@@ -1,0 +1,5 @@
+pytest-homeassistant-custom-component
+aiousbwatcher
+pyudev
+serialx
+pytest-cov
