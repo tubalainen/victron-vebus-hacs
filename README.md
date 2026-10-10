@@ -166,6 +166,23 @@ How the code is organised:
 - **`tests/vebus/simulator.py`:** a scripted MK3 with a MultiPlus-II behind it. Both the
   protocol tests and the Home Assistant tests use it.
 
+### Releasing
+
+1. Bump `version` in `custom_components/victron_vebus/manifest.json` (e.g. `0.2.0`) and
+   merge that to `main`.
+2. Tag the merge commit on `main` and push the tag:
+
+   ```bash
+   git checkout main && git pull
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+The release workflow checks that the tag matches the manifest version, creates the
+GitHub release with generated notes and attaches `victron_vebus.zip`. HACS then offers
+the new version as an update. Tags with a suffix such as `v0.2.0-beta1` become
+pre-releases.
+
 ## Credits
 
 - [j9brown/victron-mk3](https://github.com/j9brown/victron-mk3) and
