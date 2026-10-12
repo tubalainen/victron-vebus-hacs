@@ -36,11 +36,14 @@ MP2_RAM_VAR_INFO: dict[int, RamVarInfo | None] = {
 }
 # Raw (scale, offset, default, min, max).
 MP2_SETTING_INFO_RAW: dict[int, tuple[int, int, int, int, int]] = {
+    0: (1, 0, 0x89B0, 0, 0x6FFC),  # flags: maximum = mask of supported bits
     2: (0x10000 - 100, 0, 2880, 2400, 3200),
     3: (0x10000 - 100, 0, 2760, 2400, 3200),
     4: (1, 0, 70, 0, 70),
     6: (0x10000 - 10, 0, 320, 10, 500),
+    60: (1, 0, 0x0210, 0, 0x0FFF),
     64: (1, 0, 0, 0, 9999),
+    88: (0x10000 - 100, 0, 2760, 2400, 3200),
 }
 
 
@@ -86,8 +89,26 @@ class SimulatedMultiPlus:
         }
     )
     settings: dict[int, int] = field(
-        default_factory=lambda: {2: 2880, 3: 2760, 4: 70, 6: 160, 64: 200}
+        default_factory=lambda: {
+            0: 0x89B0,  # PowerAssist on, UPS on, weak AC off
+            2: 2880,
+            3: 2760,
+            4: 70,
+            6: 160,
+            60: 0x0210,  # solar & wind priority on
+            64: 200,
+            88: 2760,
+        }
     )
+    # Winmon mode 2 (long frames) selected with the 'S' command.
+    long_frames: bool = False
+    # Cut mode 1 setting info replies after three records, as some devices do.
+    truncate_setting_info: bool = False
+    ack_writes: bool = True
+    access_level_settings: set[int] = field(default_factory=set)
+    # (flags, setting, value) of every WriteViaID.
+    writes: list[tuple[int, int, int]] = field(default_factory=list)
+    forced: list[int] = field(default_factory=list)
     dc_charger_current: int = 123  # 0.1 A
     dc_inverter_current: int = 0
     received: list[bytes] = field(default_factory=list)
@@ -105,9 +126,14 @@ class SimulatedMultiPlus:
             ]
         if cmd == "A":
             return [encode_frame(ord("A"), [data[0], data[1]])]
+        if cmd == "D":
+            return [encode_frame(ord("D"), [3, *_u16(self.current_limit), 0, 0])]
         if cmd == "S":
-            if data and data[0]:
+            flags = data[4] if len(data) > 4 else 0
+            if data and data[0] and not flags & 0x10:
                 self._apply_switch(data)
+            if len(data) > 6:
+                self.long_frames = not data[6] & 0x01
             return [encode_frame(ord("S"))]
         if cmd == "H":
             if not self.supports_h:
@@ -168,7 +194,22 @@ class SimulatedMultiPlus:
         if cmd == 0x06:
             return [0x83, *_u16(self.firmware >> 16)]
         if cmd == 0x0E:
+            if args and args[0]:
+                self.forced.append(args[0])
+                self.device_state = 9
+                self.charge_sub_state = {1: 7, 2: 6, 3: 3}[args[0]]
             return [0x94, self.device_state, self.charge_sub_state]
+        if cmd == 0x37:
+            if not self.long_frames:
+                return [0x80, 0x00, 0x00]
+            flags, setting, value = args[0], args[1], args[2] | args[3] << 8
+            if setting in self.access_level_settings:
+                return [0x9B, 0x00, 0x00]
+            if setting not in self.settings:
+                return [0x80, 0x02, 0x00]
+            self.writes.append((flags, setting, value))
+            self.settings[setting] = value
+            return [0x88, 0x00, 0x00] if self.ack_writes else []
         if cmd == 0x30:
             values: list[int] = []
             for var in args:
@@ -187,6 +228,13 @@ class SimulatedMultiPlus:
             if setting not in MP2_SETTING_INFO_RAW:
                 return [0x91, 0, 0]
             sc, off, default, minimum, maximum = MP2_SETTING_INFO_RAW[setting]
+            if self.long_frames:
+                return [
+                    0x89, *_u16(sc), *_u16(off), *_u16(default),
+                    *_u16(minimum), *_u16(maximum), 0x00,
+                ]  # fmt: skip
+            if self.truncate_setting_info:
+                return [0x89, *_u16(sc), 0x8A, *_u16(off), 0x8B, *_u16(default)]
             return [
                 0x89, *_u16(sc), 0x8A, *_u16(off), 0x8B, *_u16(default),
                 0x8C, *_u16(minimum), 0x8D, *_u16(maximum),

@@ -30,7 +30,15 @@ sys.path.insert(
     str(Path(__file__).resolve().parent.parent / "custom_components" / "victron_vebus"),
 )
 
-from vebus import Mode, RamVar, Setting, VeBusClient, VeBusError
+from vebus import (
+    ForceChargeState,
+    Mode,
+    RamVar,
+    Setting,
+    SettingFlag,
+    VeBusClient,
+    VeBusError,
+)
 from vebus.frame import FrameDecoder
 from vebus.models import VeBusState
 from vebus.transport import open_serial
@@ -149,6 +157,53 @@ async def cmd_set_mode(args: argparse.Namespace) -> None:
         await client.close()
 
 
+async def cmd_set_setting(args: argparse.Namespace) -> None:
+    if not args.yes:
+        sys.exit("This changes a device setting (RAM only); add --yes to confirm.")
+    client = await _connect(args.port)
+    try:
+        await client.complete_setting_info([args.setting])
+        before = await client.read_setting(args.setting)
+        after = await client.write_setting(args.setting, args.value)
+        print(
+            f"Setting {args.setting}: {before} -> {after} (RAM only, lost on restart)"
+        )
+    finally:
+        await client.close()
+
+
+FLAGS = {
+    "power-assist": (Setting.FLAGS_0, SettingFlag.ASSIST_ENABLED, False),
+    "weak-ac": (Setting.FLAGS_0, SettingFlag.WEAK_AC_INPUT, False),
+    "ups": (Setting.FLAGS_0, SettingFlag.DISABLE_WAVE_CHECK, True),
+    "solar-wind-priority": (Setting.FLAGS_2, SettingFlag.SOLAR_WIND_PRIORITY, False),
+}
+
+
+async def cmd_set_flag(args: argparse.Namespace) -> None:
+    if not args.yes:
+        sys.exit("This changes a device setting (RAM only); add --yes to confirm.")
+    setting, flag, inverted = FLAGS[args.flag]
+    enable = args.state == "on"
+    client = await _connect(args.port)
+    try:
+        raw = await client.set_setting_flag(setting, flag, enable != inverted)
+        print(f"Setting {int(setting)} is now 0x{raw:04x} (RAM only, lost on restart)")
+    finally:
+        await client.close()
+
+
+async def cmd_force(args: argparse.Namespace) -> None:
+    if not args.yes:
+        sys.exit("This changes the charge state; add --yes to confirm.")
+    client = await _connect(args.port)
+    try:
+        info = await client.force_charge_state(ForceChargeState[args.state.upper()])
+        print(f"Device state {info.state} / {info.charge_state}")
+    finally:
+        await client.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -169,6 +224,25 @@ def main() -> None:
     set_mode.add_argument("--limit", type=float, help="AC input current limit in A")
     set_mode.add_argument("--yes", action="store_true")
     set_mode.set_defaults(func=cmd_set_mode)
+    set_setting = sub.add_parser(
+        "set-setting", help="change a numeric setting in RAM only, e.g. 3 27.0"
+    )
+    set_setting.add_argument("port")
+    set_setting.add_argument("setting", type=int, help="setting id, e.g. 3 = float")
+    set_setting.add_argument("value", type=float)
+    set_setting.add_argument("--yes", action="store_true")
+    set_setting.set_defaults(func=cmd_set_setting)
+    set_flag = sub.add_parser("set-flag", help="switch a flag setting in RAM only")
+    set_flag.add_argument("port")
+    set_flag.add_argument("flag", choices=list(FLAGS))
+    set_flag.add_argument("state", choices=["on", "off"])
+    set_flag.add_argument("--yes", action="store_true")
+    set_flag.set_defaults(func=cmd_set_flag)
+    force = sub.add_parser("force", help="force a charge state")
+    force.add_argument("port")
+    force.add_argument("state", choices=["absorption", "float", "equalise"])
+    force.add_argument("--yes", action="store_true")
+    force.set_defaults(func=cmd_force)
     args = parser.parse_args()
     try:
         asyncio.run(args.func(args))

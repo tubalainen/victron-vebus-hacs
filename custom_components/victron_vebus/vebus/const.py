@@ -23,6 +23,7 @@ MARKER_BOOT = 0x00
 
 # Interface commands (ASCII letters).
 CMD_ADDRESS = ord("A")
+CMD_INTERFACE_STATE = ord("D")  # undocumented, returns the remote panel state
 CMD_SPECIAL = ord("F")
 CMD_INTERFACE = ord("H")  # MK3 only, undocumented
 CMD_LED = ord("L")
@@ -61,8 +62,26 @@ S_FLAGS_EXT0_WINMON_MODE1 = 0x01
 # Limit values >= 0x8000 mean "leave the set point as it is".
 S_LIMIT_IGNORE = 0x8000
 
+# 'S' data after the three state bytes read with 'D' that switches the
+# interface to Winmon mode 2 (long frames) without changing the remote panel
+# state: absolute limit format, forward panel frames, do not send the panel
+# state, FlagsExt0 0x06 (bit 0 clear = long frames). This is what VEConfigure
+# sends; taken from j9brown/victron-mk3-hass PR #15, which was tested on a
+# MultiPlus-II.
+S_LONG_FRAMES_TAIL = (0x01, 0xD0, 0x3E, 0x06)
+
 # 'A' command action.
 A_ACTION_SET = 0x01
+
+# WriteViaID (0x37) flags: bit 0 = setting (not RAM var), bit 1 = RAM only
+# (do not write the EEPROM, needs firmware 412 or later).
+WRITE_VIA_ID_SETTING = 0x01
+WRITE_VIA_ID_RAM_ONLY = 0x02
+
+# Minimum device firmware revisions (the CCC part of AABBCCC).
+MIN_FIRMWARE_FORCE_CHARGE = 400
+MIN_FIRMWARE_RAM_ONLY_WRITE = 412
+MIN_FIRMWARE_SOLAR_WIND_PRIORITY = 506
 
 
 class WinmonCommand(IntEnum):
@@ -147,8 +166,29 @@ class Setting(IntEnum):
     NUMBER_OF_SLAVES = 13
     THREE_PHASE_SETTING = 14
     I_MAINS_LIMIT_AC2 = 49
+    FLAGS_2 = 60
     BATTERY_CAPACITY = 64
     SOC_WHEN_BULK_FINISHED = 65
+    SOLAR_WIND_PRIORITY_VOLTAGE = 88
+
+
+class SettingFlag(IntFlag):
+    """Bits of the flag settings that can be changed (section 7.3.13.3)."""
+
+    # Setting 0 (Flags0).
+    DISABLE_WAVE_CHECK = 1 << 3  # set = UPS function off
+    ASSIST_ENABLED = 1 << 5  # PowerAssist
+    WEAK_AC_INPUT = 1 << 14
+    # Setting 60 (Flags2), from xcellsior/ve-bus-programming and PR #15.
+    SOLAR_WIND_PRIORITY = 1 << 9
+
+
+class ForceChargeState(IntEnum):
+    """Request values of GetSetDeviceState (0x0E) that force a charge state."""
+
+    EQUALISE = 1
+    ABSORPTION = 2
+    FLOAT = 3
 
 
 class SwitchState(IntEnum):

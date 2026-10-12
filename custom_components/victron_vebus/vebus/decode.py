@@ -179,18 +179,34 @@ def decode_ram_var_info(reply: bytes) -> RamVarInfo | None:
     return RamVarInfo.from_raw(raw_scale, raw_offset)
 
 
-def decode_setting_info(reply: bytes) -> SettingInfo | None:
-    """Decode the reply to GetSettingInfo in Winmon mode 1 (3-byte records)."""
+def decode_setting_info(reply: bytes, *, long_form: bool = False) -> SettingInfo | None:
+    """Decode the reply to GetSettingInfo (data after the W/X/Y/Z letter).
+
+    In Winmon mode 1 the reply is a list of 3-byte records (0x89 scale, 0x8A
+    offset, 0x8B default, 0x8C minimum, 0x8D maximum), possibly cut short. In
+    mode 2 (``long_form``) it is 0x89 followed by scale, offset, default,
+    minimum and maximum as 16-bit values and the access level.
+    """
     if not reply or reply[0] in (
         WinmonReply.SETTING_NOT_SUPPORTED,
         WinmonReply.READ_SETTING_OK,
     ):
         return None
+    if reply[0] != WinmonReply.SETTING_INFO_SCALE or len(reply) < 3:
+        raise DecodeError(f"Unexpected setting info reply {reply.hex()}")
+    if long_form:
+        words: list[int | None] = [
+            int.from_bytes(reply[pos : pos + 2], "little")
+            if pos + 2 <= len(reply)
+            else None
+            for pos in range(1, 11, 2)
+        ]
+        scale, offset, default, minimum, maximum = words
+        assert scale is not None  # len(reply) >= 3
+        return SettingInfo.from_raw(scale, offset or 0, default, minimum, maximum)
     values: dict[int, int] = {}
     for pos in range(0, len(reply) - 2, 3):
         values[reply[pos]] = int.from_bytes(reply[pos + 1 : pos + 3], "little")
-    if WinmonReply.SETTING_INFO_SCALE not in values:
-        raise DecodeError(f"Unexpected setting info reply {reply.hex()}")
     return SettingInfo.from_raw(
         values[WinmonReply.SETTING_INFO_SCALE],
         values.get(WinmonReply.SETTING_INFO_OFFSET, 0),
