@@ -57,12 +57,18 @@
       "init": {
         "data": {
           "scan_interval": "Polling interval",
-          "enable_controls": "Enable control entities"
+          "enable_controls": "Enable control entities",
+          "enable_battery_limits": "Enable battery operational limits (BMS)"
         },
         "data_description": {
           "scan_interval": "Seconds between polls. At 2400 baud one poll takes about a second.",
-          "enable_controls": "Create entities that change how the device operates: the remote mode and AC input current limit, the set_remote_panel_state action, buttons to force a charge state, and the charger settings and PowerAssist, weak AC, UPS and solar & wind priority switches. Settings are changed in the device's RAM only and return to the stored configuration when the device restarts."
+          "enable_controls": "Create entities that change how the device operates: the remote mode and AC input current limit, the set_remote_panel_state action, buttons to force a charge state, and the charger settings and PowerAssist, weak AC, UPS and solar & wind priority switches. Settings are changed in the device's RAM only and return to the stored configuration when the device restarts.",
+          "enable_battery_limits": "Advanced, lithium batteries only. Creates four numbers whose limits are sent to the Multi on every poll, like a battery management system. WARNING: once the Multi has received limits, it stops charging AND inverting if it gets none for 5 minutes, and keeps expecting them until it is restarted. Needs 'Enable control entities' and device firmware 415 or later."
         }
+      },
+      "disable_battery_limits": {
+        "title": "Turn off battery operational limits",
+        "description": "The Multi keeps expecting battery limits until it restarts. Once Home Assistant stops sending them, **the Multi stops charging and inverting after 5 minutes**. Restart the Multi (switch it off and on) within 5 minutes after confirming, or leave this option on."
       }
     }
   },
@@ -256,6 +262,12 @@
       },
       "ac_output_apparent_power_phase": {
         "name": "AC output apparent power {phase}"
+      },
+      "ess_active_setpoint": {
+        "name": "ESS active setpoint"
+      },
+      "ess_active_setpoint_phase": {
+        "name": "ESS active setpoint {phase}"
       }
     },
     "binary_sensor": {
@@ -351,6 +363,15 @@
       },
       "solar_wind_priority": {
         "name": "Solar & wind priority"
+      },
+      "ess_external_control": {
+        "name": "ESS external control"
+      },
+      "ess_disable_charge": {
+        "name": "ESS disable charge"
+      },
+      "ess_disable_feed_in": {
+        "name": "ESS disable feed-in"
       }
     },
     "select": {
@@ -385,6 +406,24 @@
       },
       "configured_ac_input_2_current_limit": {
         "name": "Configured AC input 2 current limit"
+      },
+      "ess_grid_setpoint": {
+        "name": "ESS grid setpoint"
+      },
+      "ess_grid_setpoint_phase": {
+        "name": "ESS grid setpoint {phase}"
+      },
+      "bms_charge_voltage": {
+        "name": "Battery limit charge voltage"
+      },
+      "bms_charge_current": {
+        "name": "Battery limit charge current"
+      },
+      "bms_discharge_voltage": {
+        "name": "Battery limit discharge voltage"
+      },
+      "bms_discharge_current": {
+        "name": "Battery limit discharge current"
       }
     },
     "button": {

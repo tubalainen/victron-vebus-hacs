@@ -20,6 +20,7 @@ MARKER_INFO = 0x20
 MARKER_MASTER_MULTI_LED = 0x41
 MARKER_PANEL = 0x40
 MARKER_BOOT = 0x00
+MARKER_BOL = 0x3C  # reply to 'F' 9
 
 # Interface commands (ASCII letters).
 CMD_ADDRESS = ord("A")
@@ -41,6 +42,7 @@ F_AC_L2 = 2
 F_AC_L3 = 3
 F_AC_L4 = 4
 F_MASTER_MULTI_LED = 5
+F_BATTERY_OPERATIONAL_LIMITS = 9
 
 # Phase info byte of an info frame (section 6.1).
 PHASE_INFO_DC = 0x0C
@@ -82,6 +84,21 @@ WRITE_VIA_ID_RAM_ONLY = 0x02
 MIN_FIRMWARE_FORCE_CHARGE = 400
 MIN_FIRMWARE_RAM_ONLY_WRITE = 412
 MIN_FIRMWARE_SOLAR_WIND_PRIORITY = 506
+MIN_FIRMWARE_BOL = 415
+# Battery Operational Limits also need MK3 firmware 203 or later (the last
+# three digits of the interface version, e.g. 1170216 -> 216).
+MIN_MK3_FIRMWARE_BOL = 203
+
+# Assistant RAM (ESS wiki section 3.6): records start at RAM ID 128. Each
+# record starts with a word 0xZZZY: assistant id ZZZ and Y following words.
+ASSISTANT_RAM_START = 128
+ASSISTANT_RAM_END = 200  # arbitrary upper bound, as in yvesf/ve-ctrl-tool
+ASSISTANT_ID_ESS = 5
+# Words of the ESS record after its ID_Size word.
+ESS_SETPOINT_OFFSET = 1  # AC input power setpoint in W, signed (MK3 sign)
+ESS_FLAGS_OFFSET = 2  # bit 0 disable charge, bit 1 disable feed-in
+ESS_DISABLE_CHARGE = 0x01
+ESS_DISABLE_FEED_IN = 0x02
 
 
 class WinmonCommand(IntEnum):

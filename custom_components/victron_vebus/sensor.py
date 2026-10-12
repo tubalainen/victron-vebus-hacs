@@ -615,6 +615,11 @@ async def async_setup_entry(
             entities.append(
                 VeBusPhaseSensor(coordinator, description, phase, multi_phase)
             )
+    ess_addresses = sorted(coordinator.client.ess_records)
+    for address in ess_addresses:
+        entities.append(
+            VeBusEssSetpointSensor(coordinator, address, len(ess_addresses) > 1)
+        )
     units = coordinator.identity.units
     if len(units) > 1:
         for address in units:
@@ -692,3 +697,36 @@ class VeBusUnitSensor(VeBusEntity, SensorEntity):
         """Return the state of the sensor."""
         unit = self.coordinator.data.units.get(self._address)
         return None if unit is None else self.entity_description.unit_value_fn(unit)
+
+
+class VeBusEssSetpointSensor(VeBusEntity, SensorEntity):
+    """The ESS setpoint the device currently uses (positive = from the grid)."""
+
+    def __init__(
+        self, coordinator: VeBusCoordinator, address: int, per_phase: bool
+    ) -> None:
+        """Initialize the sensor for the phase master at ``address``."""
+        description = SensorEntityDescription(
+            key=f"ess_active_setpoint_l{address + 1}"
+            if per_phase
+            else "ess_active_setpoint",
+            translation_key="ess_active_setpoint_phase"
+            if per_phase
+            else "ess_active_setpoint",
+            translation_placeholders={"phase": f"L{address + 1}"} if per_phase else {},
+            device_class=SensorDeviceClass.POWER,
+            state_class=SensorStateClass.MEASUREMENT,
+            native_unit_of_measurement=UnitOfPower.WATT,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+        super().__init__(coordinator, description)
+        self._address = address
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the setpoint read from the ESS assistant."""
+        ess = self.coordinator.data.ess.get(self._address)
+        if ess is None or ess.setpoint is None:
+            return None
+        # MK3 sign: negative = import; Home Assistant/GX sign is the inverse.
+        return -ess.setpoint

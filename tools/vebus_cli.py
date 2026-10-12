@@ -109,6 +109,8 @@ async def cmd_info(args: argparse.Namespace) -> None:
         print(f"Units:       {client.units}")
         for address, firmware in sorted(client.unit_firmware.items()):
             print(f"  unit {address}: firmware {firmware}")
+        print(f"ESS records: {client.ess_records or 'no ESS assistant found'}")
+        print(f"Battery operational limits supported: {client.supports_battery_limits}")
         print("RAM variable info:")
         for var, info in sorted(client.ram_var_info.items()):
             print(f"  {var:3d} {RamVar(var).name:30s} {info}")
@@ -208,6 +210,31 @@ async def cmd_force(args: argparse.Namespace) -> None:
         await client.close()
 
 
+async def cmd_ess_setpoint(args: argparse.Namespace) -> None:
+    if not args.yes:
+        sys.exit(
+            "This controls how much power the Multi takes from the grid; add --yes."
+        )
+    client = await _connect(args.port)
+    try:
+        if args.address not in client.ess_records:
+            sys.exit(f"No ESS assistant at address {args.address}")
+        # Home Assistant/GX sign (positive = import) -> MK3 sign.
+        value = -round(args.watts)
+        end = asyncio.get_running_loop().time() + args.seconds
+        while asyncio.get_running_loop().time() < end:
+            await client.write_ess_setpoint(args.address, value)
+            state = await client.read_ess(args.address)
+            print(f"Setpoint {args.watts:+.0f} W (MK3 value {state.setpoint})")
+            await asyncio.sleep(5)
+    finally:
+        try:
+            await client.write_ess_setpoint(args.address, 0)
+            print("Setpoint reset to 0 W")
+        finally:
+            await client.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -247,6 +274,16 @@ def main() -> None:
     force.add_argument("state", choices=["absorption", "float", "equalise"])
     force.add_argument("--yes", action="store_true")
     force.set_defaults(func=cmd_force)
+    ess = sub.add_parser(
+        "ess-setpoint",
+        help="hold an ESS grid setpoint for a while (positive = import), then 0 W",
+    )
+    ess.add_argument("port")
+    ess.add_argument("watts", type=float)
+    ess.add_argument("--seconds", type=float, default=60)
+    ess.add_argument("--address", type=int, default=0, help="phase master (0..2)")
+    ess.add_argument("--yes", action="store_true")
+    ess.set_defaults(func=cmd_ess_setpoint)
     args = parser.parse_args()
     try:
         asyncio.run(args.func(args))

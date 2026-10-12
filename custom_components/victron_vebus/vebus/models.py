@@ -244,6 +244,34 @@ class DeviceStateInfo:
     raw_sub_state: int
 
 
+@dataclass(frozen=True, slots=True)
+class EssState:
+    """State of the ESS assistant of one phase master.
+
+    ``setpoint`` uses the MK3 sign: negative takes power from the grid,
+    positive feeds power into it (the inverse of the GX convention).
+    """
+
+    setpoint: int | None
+    disable_charge: bool | None
+    disable_feed_in: bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class BatteryLimits:
+    """Battery Operational Limits ('F' 9, section 6.4).
+
+    Voltages in V, currents in A. A discharge current of 0 stops discharging.
+    """
+
+    charge_voltage: float
+    charge_current: float
+    discharge_voltage: float
+    discharge_current: float
+    # Set in a reply when the device reported missing information (timeout).
+    timeout: bool = False
+
+
 @dataclass(slots=True)
 class UnitState:
     """Values read from one unit of a multi-unit (parallel/three-phase) system."""
@@ -279,6 +307,10 @@ class VeBusState:
     # False when the device does not answer info frames and values come from
     # RAM variables instead (e.g. Phoenix/Compact inverters).
     info_frames: bool = True
+    # ESS assistant state by phase master address (only if ESS is installed).
+    ess: dict[int, EssState] = field(default_factory=dict)
+    # Last Battery Operational Limits acknowledged by the device.
+    battery_limits: BatteryLimits | None = None
     timestamp: float = field(default_factory=time.monotonic)
 
     def ram_value(self, var: int) -> float | None:

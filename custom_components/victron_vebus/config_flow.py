@@ -27,6 +27,7 @@ from homeassistant.helpers.service_info.usb import UsbServiceInfo
 import voluptuous as vol
 
 from .const import (
+    CONF_ENABLE_BATTERY_LIMITS,
     CONF_ENABLE_CONTROLS,
     CONF_SCAN_INTERVAL,
     DEFAULT_ADDRESS,
@@ -247,11 +248,19 @@ class VeBusConfigFlow(ConfigFlow, domain=DOMAIN):
 class VeBusOptionsFlow(OptionsFlowWithReload):
     """Options of the integration."""
 
+    _pending: dict[str, Any]
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
+            was_enabled = self.config_entry.options.get(
+                CONF_ENABLE_BATTERY_LIMITS, False
+            )
+            if was_enabled and not user_input.get(CONF_ENABLE_BATTERY_LIMITS, False):
+                self._pending = user_input
+                return await self.async_step_disable_battery_limits()
             return self.async_create_entry(data=user_input)
         schema = vol.Schema(
             {
@@ -267,6 +276,9 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                     )
                 ),
                 vol.Required(CONF_ENABLE_CONTROLS, default=False): BooleanSelector(),
+                vol.Required(
+                    CONF_ENABLE_BATTERY_LIMITS, default=False
+                ): BooleanSelector(),
             }
         )
         return self.async_show_form(
@@ -275,3 +287,11 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                 schema, self.config_entry.options
             ),
         )
+
+    async def async_step_disable_battery_limits(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Warn that the Multi keeps expecting battery limits until restarted."""
+        if user_input is not None:
+            return self.async_create_entry(data=self._pending)
+        return self.async_show_form(step_id="disable_battery_limits")

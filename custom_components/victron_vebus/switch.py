@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
-from homeassistant.const import STATE_OFF, EntityCategory
+from homeassistant.const import STATE_OFF, STATE_ON, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -74,6 +74,33 @@ FLAG_SWITCHES: tuple[VeBusFlagSwitchEntityDescription, ...] = (
 )
 
 
+ESS_CONTROL = SwitchEntityDescription(
+    key="ess_external_control",
+    translation_key="ess_external_control",
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class VeBusEssFlagSwitchEntityDescription(SwitchEntityDescription):
+    """Describes a switch for one of the ESS assistant flags."""
+
+    flag: str  # attribute of EssState and keyword of write_ess_flags
+
+
+ESS_FLAG_SWITCHES: tuple[VeBusEssFlagSwitchEntityDescription, ...] = (
+    VeBusEssFlagSwitchEntityDescription(
+        key="ess_disable_charge",
+        translation_key="ess_disable_charge",
+        flag="disable_charge",
+    ),
+    VeBusEssFlagSwitchEntityDescription(
+        key="ess_disable_feed_in",
+        translation_key="ess_disable_feed_in",
+        flag="disable_feed_in",
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: VeBusConfigEntry,
@@ -89,6 +116,12 @@ async def async_setup_entry(
             if coordinator.can_write_flag(description.setting, description.flag)
             and description.exists_fn(coordinator)
         )
+        if coordinator.client.ess_records:
+            entities.append(VeBusEssControlSwitch(coordinator, ESS_CONTROL))
+            entities.extend(
+                VeBusEssFlagSwitch(coordinator, description)
+                for description in ESS_FLAG_SWITCHES
+            )
     async_add_entities(entities)
 
 
@@ -167,3 +200,63 @@ class VeBusFlagSwitch(VeBusEntity, SwitchEntity):
                 description.setting, description.flag, on != description.inverted
             )
         )
+
+
+class VeBusEssControlSwitch(VeBusEntity, SwitchEntity, RestoreEntity):
+    """Lets Home Assistant control the ESS grid setpoint.
+
+    While on, the setpoint numbers are written to the ESS assistant and
+    refreshed regularly. Turning it off writes 0 W, which returns the
+    assistant to its standard behaviour. The state is restored on restart.
+    """
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the previous state."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state == STATE_ON:
+            # Resume control; the setpoint numbers restore their values too.
+            self.coordinator.ess_control = True
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether Home Assistant controls the ESS setpoint."""
+        return self.coordinator.ess_control
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Start controlling the ESS setpoint."""
+        await self.async_device_call(self.coordinator.async_set_ess_control(True))
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Hand the ESS setpoint back to the device."""
+        await self.async_device_call(self.coordinator.async_set_ess_control(False))
+
+
+class VeBusEssFlagSwitch(VeBusEntity, SwitchEntity):
+    """The ESS disable charge / disable feed-in flag, on every phase master."""
+
+    entity_description: VeBusEssFlagSwitchEntityDescription
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return the flag of the L1 phase master."""
+        ess = self.coordinator.data.ess.get(self.coordinator.client.address)
+        if ess is None:
+            return None
+        value: bool | None = getattr(ess, self.entity_description.flag)
+        return value
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Set the flag."""
+        await self._async_set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Clear the flag."""
+        await self._async_set(False)
+
+    async def _async_set(self, on: bool) -> None:
+        client = self.coordinator.client
+        for address in client.ess_records:
+            await self.async_device_call(
+                client.write_ess_flags(address, **{self.entity_description.flag: on})
+            )
