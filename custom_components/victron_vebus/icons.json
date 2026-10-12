@@ -124,14 +124,6 @@
         "state": {
           "on": "mdi:led-on"
         }
-      }
-    },
-    "switch": {
-      "keep_awake": {
-        "default": "mdi:sleep",
-        "state": {
-          "on": "mdi:sleep-off"
-        }
       },
       "power_assist": {
         "default": "mdi:transmission-tower-export"
@@ -141,6 +133,14 @@
       },
       "ups_function": {
         "default": "mdi:power-plug-battery"
+      }
+    },
+    "switch": {
+      "keep_awake": {
+        "default": "mdi:sleep",
+        "state": {
+          "on": "mdi:sleep-off"
+        }
       },
       "solar_wind_priority": {
         "default": "mdi:solar-power-variant"
@@ -158,20 +158,9 @@
         "default": "mdi:transmission-tower-export"
       }
     },
-    "select": {
-      "remote_mode": {
-        "default": "mdi:power-settings"
-      }
-    },
     "number": {
       "remote_current_limit": {
         "default": "mdi:current-ac"
-      },
-      "absorption_voltage": {
-        "default": "mdi:battery-arrow-up"
-      },
-      "float_voltage": {
-        "default": "mdi:battery-sync"
       },
       "charge_current_limit": {
         "default": "mdi:battery-charging-high"
@@ -210,9 +199,6 @@
       },
       "force_float": {
         "default": "mdi:battery-sync"
-      },
-      "force_equalise": {
-        "default": "mdi:battery-heart-variant"
       }
     }
   },

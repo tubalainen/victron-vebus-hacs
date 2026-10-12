@@ -7,6 +7,7 @@ import asyncio
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -101,7 +102,7 @@ async def test_three_phase_entities(
 
 
 async def test_controls(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
-    """Mode select, current limit and the service drive the 'S' command."""
+    """The current limit number and the service drive the 'S' command."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="HQ123",
@@ -110,44 +111,100 @@ async def test_controls(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
         options={CONF_ENABLE_CONTROLS: True, CONF_SCAN_INTERVAL: 30},
     )
     await _setup(hass, entry)
-    select = "select.victron_ve_bus_remote_mode"
     number = "number.victron_ve_bus_remote_ac_input_current_limit"
-    assert hass.states.get(select).state == "on"
+    # The mode is a guided device action, not a dashboard select.
+    assert hass.states.get("select.victron_ve_bus_remote_mode") is None
     assert hass.states.get(number).state == "16.0"
 
-    await hass.services.async_call(
-        "select",
-        "select_option",
-        {"entity_id": select, "option": "charger_only"},
-        blocking=True,
-    )
-    assert hass.states.get(select).state == "charger_only"
-    sent = [f for f in fake_mk3.device.received if f[2] == ord("S") and f[0] == 7]
-    assert sent[-1][3] == 1  # charger only
-    assert hass.states.get(number).state == "16.0"
+    def sent() -> list[bytes]:
+        return [f for f in fake_mk3.device.received if f[2] == ord("S") and f[0] == 7]
 
     await hass.services.async_call(
         "number", "set_value", {"entity_id": number, "value": 10.5}, blocking=True
     )
     assert hass.states.get(number).state == "10.5"
-    assert hass.states.get(select).state == "charger_only"
+    assert sent()[-1][3] == 3  # the mode stays on
 
     await hass.services.async_call(
         DOMAIN,
         "set_remote_panel_state",
-        {"entity_id": select, "mode": "on", "current_limit": 12},
+        {
+            "config_entry_id": entry.entry_id,
+            "mode": "charger_only",
+            "acknowledge_risk": True,
+        },
         blocking=True,
     )
-    assert hass.states.get(select).state == "on"
+    assert sent()[-1][3] == 1  # charger only
+    assert hass.states.get("sensor.victron_ve_bus_mode").state == "charger_only"
+    # Without a limit the actual limit is kept.
+    assert hass.states.get(number).state == "10.5"
+
+    await hass.services.async_call(
+        DOMAIN,
+        "set_remote_panel_state",
+        {
+            "config_entry_id": entry.entry_id,
+            "mode": "on",
+            "current_limit": 12,
+            "acknowledge_risk": True,
+        },
+        blocking=True,
+    )
+    assert sent()[-1][3] == 3
     assert hass.states.get(number).state == "12.0"
 
+    count = len(sent())
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            "set_remote_panel_state",
+            {
+                "config_entry_id": entry.entry_id,
+                "mode": "off",
+                "acknowledge_risk": False,
+            },
+            blocking=True,
+        )
     with pytest.raises(vol.Invalid):
         await hass.services.async_call(
             DOMAIN,
             "set_remote_panel_state",
-            {"entity_id": select, "mode": "turbo"},
+            {"config_entry_id": entry.entry_id, "mode": "off"},
             blocking=True,
         )
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            "set_remote_panel_state",
+            {
+                "config_entry_id": entry.entry_id,
+                "mode": "turbo",
+                "acknowledge_risk": True,
+            },
+            blocking=True,
+        )
+    assert len(sent()) == count
+
+
+async def test_service_needs_control(
+    hass: HomeAssistant, fake_mk3: FakeMK3, config_entry: MockConfigEntry
+) -> None:
+    """A monitoring-only entry refuses the remote panel action."""
+    await _setup(hass, config_entry)
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN,
+            "set_remote_panel_state",
+            {
+                "config_entry_id": config_entry.entry_id,
+                "mode": "off",
+                "acknowledge_risk": True,
+            },
+            blocking=True,
+        )
+    assert err.value.translation_key == "controls_disabled"
+    assert not [f for f in fake_mk3.device.received if f[2] == ord("S") and f[0] == 7]
 
 
 async def test_keep_awake_switch(

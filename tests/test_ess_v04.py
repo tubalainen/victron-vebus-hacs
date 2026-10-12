@@ -206,13 +206,13 @@ async def test_disabling_battery_limits_asks_for_confirmation(
     entry = _entry(battery_limits=True)
     await _setup(hass, entry)
     result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "settings"}
+    )
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {
-            CONF_SCAN_INTERVAL: 30,
-            CONF_ENABLE_CONTROLS: True,
-            CONF_ENABLE_BATTERY_LIMITS: False,
-        },
+        {CONF_SCAN_INTERVAL: 30, CONF_ENABLE_BATTERY_LIMITS: False},
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "disable_battery_limits"

@@ -1,4 +1,4 @@
-"""Tests for the v0.2 controls: force charge buttons, setting numbers, flag switches."""
+"""Tests for the dashboard controls: force charge buttons, setting numbers."""
 
 from __future__ import annotations
 
@@ -46,8 +46,7 @@ async def test_no_setting_controls_without_option(
     """Without the controls option only read-only entities exist."""
     await _setup(hass, _entry(controls=False))
     assert hass.states.get(f"button.{PREFIX}_force_absorption") is None
-    assert hass.states.get(f"number.{PREFIX}_float_voltage") is None
-    assert hass.states.get(f"switch.{PREFIX}_powerassist") is None
+    assert hass.states.get(f"number.{PREFIX}_charge_current_limit") is None
     # The read-only solar & wind priority voltage sensor is always there.
     assert _state(hass, f"sensor.{PREFIX}_solar_wind_priority_voltage") == "27.6"
 
@@ -66,67 +65,45 @@ async def test_force_charge_buttons(hass: HomeAssistant, fake_mk3: FakeMK3) -> N
 
 
 async def test_setting_numbers(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
-    """Numbers write settings in RAM only and validate against each other."""
+    """Numbers write settings in RAM only, within the device's range."""
     await _setup(hass, _entry())
-    entity_id = f"number.{PREFIX}_float_voltage"
+    # Charge voltages are guided device actions, not dashboard numbers.
+    assert hass.states.get(f"number.{PREFIX}_float_voltage") is None
+    assert hass.states.get(f"number.{PREFIX}_absorption_voltage") is None
+    entity_id = f"number.{PREFIX}_charge_current_limit"
     state = hass.states.get(entity_id)
     assert state is not None
-    assert state.state == "27.6"
-    assert state.attributes["min"] == 24.0
-    assert state.attributes["max"] == 32.0
-    assert state.attributes["step"] == pytest.approx(0.01)
+    assert state.state == "70.0"
+    assert state.attributes["min"] == 0
+    assert state.attributes["max"] == 70
 
     await hass.services.async_call(
-        "number", "set_value", {"entity_id": entity_id, "value": 27.0}, blocking=True
+        "number", "set_value", {"entity_id": entity_id, "value": 50}, blocking=True
     )
-    assert fake_mk3.device.writes == [(0x03, 3, 2700)]
-    assert _state(hass, entity_id) == "27.0"
-    assert _state(hass, f"sensor.{PREFIX}_float_voltage") == "27.0"
+    assert fake_mk3.device.writes == [(0x03, 4, 50)]
+    assert fake_mk3.device.settings[4] == 50
+    assert _state(hass, entity_id) == "50.0"
 
-    # Float above absorption (28.8 V) is refused before anything is sent.
+    # Above the device maximum is refused before anything is sent.
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(
             "number",
             "set_value",
-            {"entity_id": entity_id, "value": 29.0},
+            {"entity_id": entity_id, "value": 80},
             blocking=True,
         )
     assert len(fake_mk3.device.writes) == 1
 
-    await hass.services.async_call(
-        "number",
-        "set_value",
-        {"entity_id": f"number.{PREFIX}_charge_current_limit", "value": 50},
-        blocking=True,
-    )
-    assert fake_mk3.device.settings[4] == 50
 
-
-async def test_flag_switches(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
-    """Flag switches change one bit each; UPS is the inverse of its bit."""
+async def test_flag_binary_sensors(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
+    """PowerAssist, weak AC and UPS are read-only; UPS is the inverse of its bit."""
     await _setup(hass, _entry())
-    assert _state(hass, f"switch.{PREFIX}_powerassist") == "on"
-    assert _state(hass, f"switch.{PREFIX}_weak_ac_input") == "off"
-    assert _state(hass, f"switch.{PREFIX}_ups_function") == "on"
-
-    await hass.services.async_call(
-        "switch",
-        "turn_on",
-        {"entity_id": f"switch.{PREFIX}_weak_ac_input"},
-        blocking=True,
-    )
-    assert fake_mk3.device.settings[0] == 0x89B0 | 0x4000
-    assert _state(hass, f"switch.{PREFIX}_weak_ac_input") == "on"
-
-    await hass.services.async_call(
-        "switch",
-        "turn_off",
-        {"entity_id": f"switch.{PREFIX}_ups_function"},
-        blocking=True,
-    )
-    assert fake_mk3.device.settings[0] == 0x89B0 | 0x4000 | 0x0008
-    assert _state(hass, f"switch.{PREFIX}_ups_function") == "off"
-    assert all(flags == 0x03 for flags, _, _ in fake_mk3.device.writes)
+    assert _state(hass, f"binary_sensor.{PREFIX}_powerassist") == "on"
+    assert _state(hass, f"binary_sensor.{PREFIX}_weak_ac_input") == "off"
+    assert _state(hass, f"binary_sensor.{PREFIX}_ups_function") == "on"
+    assert hass.states.get(f"switch.{PREFIX}_powerassist") is None
+    assert hass.states.get(f"switch.{PREFIX}_weak_ac_input") is None
+    assert hass.states.get(f"switch.{PREFIX}_ups_function") is None
 
 
 async def test_solar_wind_priority(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
@@ -158,8 +135,7 @@ async def test_old_firmware_hides_writes(
     fake_mk3.device.firmware = 2623411
     await _setup(hass, _entry())
     assert hass.states.get(f"button.{PREFIX}_force_float") is not None
-    assert hass.states.get(f"number.{PREFIX}_float_voltage") is None
-    assert hass.states.get(f"switch.{PREFIX}_powerassist") is None
+    assert hass.states.get(f"number.{PREFIX}_charge_current_limit") is None
     assert hass.states.get(f"switch.{PREFIX}_solar_wind_priority") is None
     assert hass.states.get(f"sensor.{PREFIX}_solar_wind_priority_voltage") is None
 
@@ -170,7 +146,7 @@ async def test_truncated_setting_info_completed(
     """Missing ranges are read in long-frame mode during setup."""
     fake_mk3.device.truncate_setting_info = True
     await _setup(hass, _entry())
-    state = hass.states.get(f"number.{PREFIX}_absorption_voltage")
+    state = hass.states.get(f"number.{PREFIX}_charge_current_limit")
     assert state is not None
-    assert state.attributes["max"] == 32.0
+    assert state.attributes["max"] == 70
     assert not fake_mk3.device.long_frames

@@ -34,11 +34,6 @@ BUTTONS: tuple[VeBusButtonEntityDescription, ...] = (
         translation_key="force_float",
         charge_state=ForceChargeState.FLOAT,
     ),
-    VeBusButtonEntityDescription(
-        key="force_equalise",
-        translation_key="force_equalise",
-        charge_state=ForceChargeState.EQUALISE,
-    ),
 )
 
 

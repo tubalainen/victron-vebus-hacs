@@ -43,28 +43,6 @@ class VeBusFlagSwitchEntityDescription(SwitchEntityDescription):
 
 FLAG_SWITCHES: tuple[VeBusFlagSwitchEntityDescription, ...] = (
     VeBusFlagSwitchEntityDescription(
-        key="power_assist",
-        translation_key="power_assist",
-        entity_category=EntityCategory.CONFIG,
-        setting=Setting.FLAGS_0,
-        flag=SettingFlag.ASSIST_ENABLED,
-    ),
-    VeBusFlagSwitchEntityDescription(
-        key="weak_ac_input",
-        translation_key="weak_ac_input",
-        entity_category=EntityCategory.CONFIG,
-        setting=Setting.FLAGS_0,
-        flag=SettingFlag.WEAK_AC_INPUT,
-    ),
-    VeBusFlagSwitchEntityDescription(
-        key="ups_function",
-        translation_key="ups_function",
-        entity_category=EntityCategory.CONFIG,
-        setting=Setting.FLAGS_0,
-        flag=SettingFlag.DISABLE_WAVE_CHECK,
-        inverted=True,
-    ),
-    VeBusFlagSwitchEntityDescription(
         key="solar_wind_priority",
         translation_key="solar_wind_priority",
         setting=Setting.FLAGS_2,

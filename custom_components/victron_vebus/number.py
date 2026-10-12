@@ -52,13 +52,6 @@ def _check_not_above_absorption(state: VeBusState, value: float) -> str | None:
     return None
 
 
-def _check_not_below_float(state: VeBusState, value: float) -> str | None:
-    float_voltage = state.setting_value(Setting.U_BAT_FLOAT)
-    if float_voltage is not None and value < float_voltage:
-        return f"{value} V is below the float voltage of {float_voltage} V"
-    return None
-
-
 @dataclass(frozen=True, kw_only=True)
 class VeBusSettingNumberEntityDescription(NumberEntityDescription):
     """Describes a number backed by a device setting."""
@@ -70,26 +63,6 @@ class VeBusSettingNumberEntityDescription(NumberEntityDescription):
 
 
 SETTING_NUMBERS: tuple[VeBusSettingNumberEntityDescription, ...] = (
-    VeBusSettingNumberEntityDescription(
-        key="absorption_voltage",
-        translation_key="absorption_voltage",
-        setting=Setting.U_BAT_ABSORPTION,
-        device_class=NumberDeviceClass.VOLTAGE,
-        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-        mode=NumberMode.BOX,
-        entity_category=EntityCategory.CONFIG,
-        check_fn=_check_not_below_float,
-    ),
-    VeBusSettingNumberEntityDescription(
-        key="float_voltage",
-        translation_key="float_voltage",
-        setting=Setting.U_BAT_FLOAT,
-        device_class=NumberDeviceClass.VOLTAGE,
-        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-        mode=NumberMode.BOX,
-        entity_category=EntityCategory.CONFIG,
-        check_fn=_check_not_above_absorption,
-    ),
     VeBusSettingNumberEntityDescription(
         key="charge_current_limit",
         translation_key="charge_current_limit",
