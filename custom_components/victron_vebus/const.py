@@ -9,14 +9,22 @@ MANUFACTURER: Final = "Victron Energy"
 DEFAULT_NAME: Final = "Victron VE.Bus"
 
 CONF_ENABLE_CONTROLS: Final = "enable_controls"
+# Battery Operational Limits: once sent, the Multi stops charging and inverting
+# if they are not refreshed within 5 minutes, until it is restarted.
+CONF_ENABLE_BATTERY_LIMITS: Final = "enable_battery_limits"
 CONF_SCAN_INTERVAL: Final = "scan_interval"
 
 DEFAULT_SCAN_INTERVAL: Final = 2
 MIN_SCAN_INTERVAL: Final = 1
 MAX_SCAN_INTERVAL: Final = 30
 
-# The VE.Bus address of the device talked to. Multi-unit systems are future work.
+# The VE.Bus address of the system's master (the L1 phase master).
 DEFAULT_ADDRESS: Final = 0
+
+# The ESS setpoint is written again at least this often (seconds) while
+# external control is on; the assistant falls back without updates.
+ESS_REFRESH_INTERVAL: Final = 10
+ESS_SETPOINT_LIMIT: Final = 30000
 
 # Raise a repair issue when the device has been unreachable for this long.
 UNAVAILABLE_ISSUE_DELAY: Final = 300

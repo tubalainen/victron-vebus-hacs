@@ -53,6 +53,12 @@
       },
       "configured_ac_input_2_current_limit": {
         "default": "mdi:transmission-tower-import"
+      },
+      "ess_active_setpoint": {
+        "default": "mdi:transmission-tower"
+      },
+      "ess_active_setpoint_phase": {
+        "default": "mdi:transmission-tower"
       }
     },
     "binary_sensor": {
@@ -138,6 +144,18 @@
       },
       "solar_wind_priority": {
         "default": "mdi:solar-power-variant"
+      },
+      "ess_external_control": {
+        "default": "mdi:transmission-tower-off",
+        "state": {
+          "on": "mdi:transmission-tower"
+        }
+      },
+      "ess_disable_charge": {
+        "default": "mdi:battery-off-outline"
+      },
+      "ess_disable_feed_in": {
+        "default": "mdi:transmission-tower-export"
       }
     },
     "select": {
@@ -166,6 +184,24 @@
       },
       "configured_ac_input_2_current_limit": {
         "default": "mdi:transmission-tower-import"
+      },
+      "ess_grid_setpoint": {
+        "default": "mdi:transmission-tower"
+      },
+      "ess_grid_setpoint_phase": {
+        "default": "mdi:transmission-tower"
+      },
+      "bms_charge_voltage": {
+        "default": "mdi:battery-arrow-up"
+      },
+      "bms_charge_current": {
+        "default": "mdi:battery-charging"
+      },
+      "bms_discharge_voltage": {
+        "default": "mdi:battery-arrow-down"
+      },
+      "bms_discharge_current": {
+        "default": "mdi:battery-minus"
       }
     },
     "button": {

@@ -36,6 +36,10 @@ async def async_get_config_entry_diagnostics(
             for address, firmware in client.unit_firmware.items()
         },
         "info_frames": client.info_frames,
+        "ess_records": {str(k): v for k, v in client.ess_records.items()},
+        "ess_control": coordinator.ess_control,
+        "ess_setpoints": {str(k): v for k, v in coordinator.ess_setpoints.items()},
+        "battery_limits_enabled": coordinator.battery_limits_enabled,
         "interface_flags_supported": client.interface_flags_supported,
         "keep_awake": coordinator.keep_awake,
         "last_update_success": coordinator.last_update_success,

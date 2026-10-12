@@ -77,8 +77,8 @@ was used where it agrees with the specification.
 |---|---|
 | **0.1** | Monitoring of a single VE.Bus device. Opt-in mode and current-limit controls. Keep awake. Reconnect. Diagnostics. Protocol simulator and tests. |
 | **0.2** | Buttons to force absorption, float or equalise (`0x0E` 1/2/3, firmware ≥ 400). RAM-only setting changes via `0x37` flags 0x03 in a long-frame session, with read-back and the bit masks reported by `0x35`: absorption/float voltage, charge current, configured AC input limit, PowerAssist, weak AC input, UPS function. Solar and wind priority (settings 60 and 88, j9brown issue #14 and PR #15). Passthru (limit 0) stays available through the action. |
-| **0.3** (beta) | Address scan (stop after 3 misses) with one device per unit, linked to the system device. Per-unit values from RAM variables read at each unit's address, round-robin. System power totals over all units, and apparent power per phase. Quattro AC input 2 limit (setting 49, number of inputs from `F` 5). A RAM-variable fallback for devices without standard info frames, such as the Compact (j9brown issue #11). |
-| 0.4 | ESS: scan for the assistant starting at RAM 128 (ESS has id 5). A setpoint number with periodic refresh, disable-charge and disable-feed-in switches. Optionally, Battery Operational Limits (`F` 9). |
+| **0.3** | Address scan (stop after 3 misses) with one device per unit, linked to the system device. Per-unit values from RAM variables read at each unit's address, round-robin. System power totals over all units, and apparent power per phase. Quattro AC input 2 limit (setting 49, number of inputs from `F` 5). A RAM-variable fallback for devices without standard info frames, such as the Compact (j9brown issue #11). |
+| **0.4** (beta) | ESS: the assistant is found from RAM 128 (ESS id 5) on every phase master. The setpoint (per phase) is written with WriteRAMVar/WriteData under an *ESS external control* switch, refreshed at least every 10 s and reset to 0 W when control stops. Disable-charge and disable-feed-in switches. Battery Operational Limits (`F` 9) behind a separate, warned option. |
 
 ## 5. Things to verify on real hardware
 
@@ -121,3 +121,16 @@ v0.3 adds these, verified only against the simulator:
   to be positive while charging.
 - **Quattro:** setting 49 is the AC input 2 limit, and bits 4–6 of the `F` 5 input
   configuration byte give the number of inputs (firmware 415 or newer).
+
+v0.4 adds these, verified only against the simulator:
+
+- **ESS setpoint sign over MK3:** negative takes power from the grid. Both the ESS wiki
+  §3.6 and yvesf/ve-ctrl-tool say so; the wiki's line "positive for charge" contradicts
+  it. The integration exposes the GX sign (positive = import) and inverts it. Check
+  with `vebus_cli.py ess-setpoint`.
+- **ESS refresh:** yvesf writes at least every 30 s to keep ESS from falling back. The
+  integration writes every 10 s, and also immediately on every change.
+- **Writing the setpoint:** `WriteRAMVar` (`0x32`, no reply) and `WriteData` (`0x34`,
+  reply `0x87`) are sent with the same tag letter (X/Y/Z).
+- **Battery Operational Limits:** the reply is a `0x3C` frame echoing the limits; flag
+  bit 7 reports missing information.

@@ -9,9 +9,10 @@ It is a ground-up rewrite inspired by
 project's known bugs and adds new features. See [docs/ANALYSIS.md](docs/ANALYSIS.md) for
 the analysis and the roadmap.
 
-> **Status:** v0.3 beta. It is developed and tested against a MultiPlus-II using a
+> **Status:** v0.4 beta. It is developed and tested against a MultiPlus-II using a
 > protocol simulator, and has not yet been verified on real hardware. Treat the setting
-> controls (v0.2) and the multi-unit, Quattro and Compact support (v0.3) as beta: try
+> controls (v0.2), the multi-unit, Quattro and Compact support (v0.3) and the ESS and
+> battery limit controls (v0.4) as beta: try
 > the controls with the command line tool first (see below), and please report your
 > results.
 
@@ -64,6 +65,10 @@ the analysis and the roadmap.
     current limit (and AC input 2 on a Quattro)
   - PowerAssist, weak AC input, UPS function and solar & wind priority switches, plus
     the solar & wind priority voltage. Settings are changed in RAM only.
+  - ESS external control (needs the ESS assistant): the grid setpoint (per phase on
+    three-phase systems) plus disable charge and disable feed-in switches
+- **Battery operational limits** (advanced, lithium only, separate option): the Multi
+  receives charge/discharge voltage and current limits, like it would from a BMS.
 
 ## Requirements
 
@@ -118,6 +123,9 @@ settings.
 | Configured AC input 2 current limit | Diagnostic. Only on devices with a second AC input (Quattro). |
 | AC input / output apparent power L1–L3 | Multi-phase systems only. Voltage × current per phase, from the info frames. |
 | *Unit N* AC input/output voltage, current and power; battery voltage, current and power; device state | Multi-unit systems only, one device per unit (*Victron VE.Bus unit N*). Units are read in turn, one per poll. |
+| ESS active setpoint (L1–L3) | Diagnostic, when the ESS assistant is installed. The setpoint the assistant uses; positive = taken from the grid. |
+| ESS external control (switch), ESS grid setpoint (L1–L3) (number), ESS disable charge / feed-in (switches) | Only with *Enable control entities* and the ESS assistant installed. See below. |
+| Battery limit charge/discharge voltage/current (numbers) | Only with *Enable battery operational limits*; firmware 415+. See below. |
 | Remote mode (select), Remote AC input current limit (number) | Only with *Enable control entities*. |
 | Force absorption / float / equalise (buttons) | Only with *Enable control entities*; firmware 400+. |
 | Absorption voltage, Float voltage, Charge current limit, Configured AC input current limit (numbers) | Only with *Enable control entities*; firmware 412+. RAM only, see below. |
@@ -195,6 +203,45 @@ Requirements:
 - The firmware version is shown in the *Firmware version* sensor. Entities whose
   feature the firmware doesn't support are not created.
 
+### ESS external control (beta)
+
+When the ESS assistant is installed on the Multi, Home Assistant can set the power
+taken from or fed into the grid, like a GX device in "ESS mode 3". The assistant is
+found at startup by walking its RAM records (the ESS wiki §3.6). Without the
+assistant, no ESS entities are created.
+
+- **ESS grid setpoint:** positive takes power from the grid, negative feeds power
+  into the grid. This is the same sign as the GX device's AcPowerSetpoint; the
+  integration inverts it for the MK3. On three-phase systems there is one setpoint per
+  phase master (L1–L3).
+- **ESS external control:** the setpoint is only sent while this switch is on. While
+  it is on, the setpoint is re-sent at least every 10 seconds, because the assistant
+  falls back when it receives no updates. Turning it off writes 0 W, which returns the
+  assistant to its normal behaviour. Unloading the integration does the same. The
+  switch and the setpoints are restored after a Home Assistant restart.
+- **ESS disable charge / disable feed-in:** the assistant's flags, written to every
+  phase master. With both on, the Multi goes to passthru.
+- Battery protection in the Multi (sustain, low battery) always takes priority over
+  the setpoint.
+
+### Battery operational limits (advanced, beta)
+
+> **Warning.** This is a BMS function for lithium batteries. Once the Multi has
+> received battery limits, it **stops charging and inverting if it receives none for 5
+> minutes**, and keeps expecting them until it is restarted. Only enable this if Home
+> Assistant runs reliably, and restart the Multi after turning it off.
+
+The option *Enable battery operational limits* (which also needs *Enable control
+entities*, device firmware 415 and MK3 firmware 203) creates four numbers:
+
+- charge voltage and charge current limit
+- discharge voltage and discharge current limit (0 A stops discharging)
+
+The limits are sent on every poll. They start from the device's absorption voltage and
+charge current, 0 V and 1000 A, and keep their values across restarts. Turning the
+option off asks for confirmation, because the Multi must then be restarted within
+5 minutes.
+
 ## Testing on the hardware without Home Assistant
 
 `tools/vebus_cli.py` uses the same protocol code without Home Assistant. Stop Home
@@ -210,6 +257,9 @@ python tools/vebus_cli.py sniff   /dev/serial/by-id/...      # print raw frames
 python tools/vebus_cli.py set-setting /dev/serial/by-id/... 3 27.0 --yes   # float voltage
 python tools/vebus_cli.py set-flag    /dev/serial/by-id/... weak-ac on --yes
 python tools/vebus_cli.py force       /dev/serial/by-id/... absorption --yes
+
+# v0.4: hold an ESS grid setpoint for 60 s (positive = import), then back to 0 W
+python tools/vebus_cli.py ess-setpoint /dev/serial/by-id/... 300 --seconds 60 --yes
 ```
 
 Please include the `info` output when reporting issues for devices other than the
