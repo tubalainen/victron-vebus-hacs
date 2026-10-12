@@ -120,11 +120,32 @@ class SimulatedMultiPlus:
     info_frames: bool = True
     # A Quattro has a second AC input (setting 49, two inputs in 'F' 5).
     quattro: bool = False
+    # ESS assistant installed: assistant RAM per address, with another
+    # assistant record first so the ESS record is at RAM ID 130.
+    ess: bool = False
+    assistant_ram: dict[int, dict[int, int]] = field(default_factory=dict)
+    # (address, RAM ID, signed value) of every WriteRAMVar/WriteData pair.
+    ram_writes: list[tuple[int, int, int]] = field(default_factory=list)
+    _pending_ram_write: int | None = None
+    # Data of every Battery Operational Limits frame ('F' 9).
+    bol_frames: list[bytes] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        """Add the Quattro AC input 2 limit."""
+        """Add the Quattro AC input 2 limit and the ESS assistant."""
         if self.quattro:
             self.settings[49] = 120
+
+    def enable_ess(self, addresses: tuple[int, ...] = (0,)) -> None:
+        """Install the ESS assistant on the given addresses."""
+        self.ess = True
+        for address in addresses:
+            self.assistant_ram[address] = {
+                128: 0x0021,  # another assistant (id 2) with one word
+                129: 0x1234,
+                130: 0x0052,  # ESS (id 5) with two words
+                131: 0,
+                132: 0,
+            }
 
     dc_charger_current: int = 123  # 0.1 A
     dc_inverter_current: int = 0
@@ -163,7 +184,7 @@ class SimulatedMultiPlus:
         if cmd == "L":
             return [encode_frame(ord("L"), [self.leds_on, self.leds_blink])]
         if cmd == "F":
-            return self._special(data[0])
+            return self._special(data[0], data[1:])
         if cmd in "WXYZ":
             if self.address != 0 and self.address not in self.units:
                 return []  # nobody at this address
@@ -180,9 +201,12 @@ class SimulatedMultiPlus:
         if limit < 0x8000:
             self.current_limit = max(self.min_limit, min(limit, self.max_limit))
 
-    def _special(self, kind: int) -> list[bytes]:
+    def _special(self, kind: int, data: bytes = b"") -> list[bytes]:
         if not self.info_frames and kind <= 4:
             return []
+        if kind == 9:
+            self.bol_frames.append(bytes(data))
+            return [_raw_frame(0x3C, list(data))]
         if kind == 0:
             d = [0, 0, 0, 0, 0x0C, *_u16(self.ram[4])]
             d += list(self.dc_inverter_current.to_bytes(3, "little"))
@@ -223,6 +247,22 @@ class SimulatedMultiPlus:
                 self.device_state = 9
                 self.charge_sub_state = {1: 7, 2: 6, 3: 3}[args[0]]
             return [0x94, self.device_state, self.charge_sub_state]
+        if cmd == 0x32:
+            self._pending_ram_write = args[0] | args[1] << 8
+            return []  # no reply
+        if cmd == 0x34:
+            ram_id = self._pending_ram_write
+            self._pending_ram_write = None
+            if ram_id is None:
+                return [0x80, 0, 0]
+            value = args[0] | args[1] << 8
+            if ram_id >= 128:
+                self.assistant_ram.setdefault(self.address, {})[ram_id] = value
+            else:
+                self.ram[ram_id] = value
+            signed = value - 0x10000 if value >= 0x8000 else value
+            self.ram_writes.append((self.address, ram_id, signed))
+            return [0x87, 0, 0]
         if cmd == 0x37:
             if not self.long_frames:
                 return [0x80, 0x00, 0x00]
@@ -235,9 +275,14 @@ class SimulatedMultiPlus:
             self.settings[setting] = value
             return [0x88, 0x00, 0x00] if self.ack_writes else []
         if cmd == 0x30:
-            ram = self.units[self.address] if self.address else self.ram
+            # Other units share the values they do not override.
+            ram = {**self.ram, **self.units[self.address]} if self.address else self.ram
+            assistant = self.assistant_ram.get(self.address, {})
             values: list[int] = []
             for var in args:
+                if var >= 128:
+                    values += _u16(assistant.get(var, 0))
+                    continue
                 if var not in ram:
                     return [0x90, 0, 0]
                 values += _u16(ram[var])

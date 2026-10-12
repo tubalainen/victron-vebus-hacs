@@ -15,6 +15,9 @@ import time
 from . import transport
 from .const import (
     A_ACTION_SET,
+    ASSISTANT_ID_ESS,
+    ASSISTANT_RAM_END,
+    ASSISTANT_RAM_START,
     CMD_ADDRESS,
     CMD_INTERFACE,
     CMD_INTERFACE_STATE,
@@ -23,12 +26,20 @@ from .const import (
     CMD_STATE,
     CMD_VERSION,
     CMD_WINMON_TAGGED,
+    ESS_DISABLE_CHARGE,
+    ESS_DISABLE_FEED_IN,
+    ESS_FLAGS_OFFSET,
+    ESS_SETPOINT_OFFSET,
+    F_BATTERY_OPERATIONAL_LIMITS,
     F_DC_INFO,
     F_MASTER_MULTI_LED,
+    MARKER_BOL,
     MARKER_BOOT,
     MARKER_MASTER_MULTI_LED,
+    MIN_FIRMWARE_BOL,
     MIN_FIRMWARE_FORCE_CHARGE,
     MIN_FIRMWARE_RAM_ONLY_WRITE,
+    MIN_MK3_FIRMWARE_BOL,
     MODE_TO_SWITCH_STATE,
     S_FLAG_ABSOLUTE_LIMIT,
     S_FLAG_DONT_SEND,
@@ -61,9 +72,11 @@ from .decode import (
 from .frame import Frame, FrameDecoder, encode_frame
 from .models import (
     AcInfo,
+    BatteryLimits,
     ConfigInfo,
     DcInfo,
     DeviceStateInfo,
+    EssState,
     FirmwareVersion,
     LedInfo,
     RamVarInfo,
@@ -251,6 +264,8 @@ class VeBusClient:
         self._unit_queue: deque[int] = deque()
         # False when the device does not answer info frames ('F' 0..4).
         self.info_frames = True
+        # RAM ID of the ESS assistant record by address, if installed.
+        self.ess_records: dict[int, int] = {}
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -856,6 +871,172 @@ class VeBusClient:
         return unit
 
     # ------------------------------------------------------------------
+    # ESS assistant (ESS wiki section 3.6)
+
+    async def _read_ram_raw_locked(self, ram_id: int) -> int | None:
+        """Read the raw 16-bit value of one RAM ID (lock held)."""
+        reply = await self._winmon_locked(WinmonCommand.READ_RAM_VAR, ram_id & 0xFF, 0)
+        if len(reply) < 3 or reply[0] != WinmonReply.READ_RAM_OK:
+            return None
+        return int.from_bytes(reply[1:3], "little")
+
+    async def _write_ram_raw_locked(self, ram_id: int, value: int) -> None:
+        """Write a RAM variable: WriteRAMVar (no reply) then WriteData (lock held)."""
+        tag = next(self._tags)
+        await self._request(
+            encode_frame(
+                tag, [WinmonCommand.WRITE_RAM_VAR, ram_id & 0xFF, ram_id >> 8]
+            ),
+            None,
+        )
+        reply = await self._request(
+            encode_frame(
+                tag, [WinmonCommand.WRITE_DATA, value & 0xFF, (value >> 8) & 0xFF]
+            ),
+            _mk_reply(tag),
+        )
+        assert reply is not None
+        if not reply.data or reply.data[0] != WinmonReply.WRITE_RAM_OK:
+            raise VeBusWriteError(
+                f"RAM {ram_id} write not acknowledged ({reply.data.hex(' ')})"
+            )
+
+    async def find_ess(self, addresses: Iterable[int]) -> dict[int, int]:
+        """Find the ESS assistant record at each address.
+
+        The assistant RAM records are walked from RAM ID 128 until the ESS
+        record (assistant id 5) or the end marker (0) is found.
+        """
+        found: dict[int, int] = {}
+        for address in addresses:
+            async with self._at_address(address):
+                ram_id = ASSISTANT_RAM_START
+                while ram_id < ASSISTANT_RAM_END:
+                    value = await self._read_ram_raw_locked(ram_id)
+                    if not value:
+                        break
+                    if value >> 4 == ASSISTANT_ID_ESS:
+                        found[address] = ram_id
+                        break
+                    ram_id += 1 + (value & 0x0F)
+        self.ess_records = found
+        return found
+
+    def _ess_record(self, address: int) -> int:
+        record = self.ess_records.get(address)
+        if record is None:
+            raise VeBusNotSupportedError(f"No ESS assistant at address {address}")
+        return record
+
+    async def read_ess(self, address: int) -> EssState:
+        """Read the setpoint and flags of the ESS assistant at an address."""
+        record = self._ess_record(address)
+        async with self._at_address(address):
+            setpoint = await self._read_ram_raw_locked(record + ESS_SETPOINT_OFFSET)
+            flags = await self._read_ram_raw_locked(record + ESS_FLAGS_OFFSET)
+        if setpoint is not None and setpoint >= 0x8000:
+            setpoint -= 0x10000
+        return EssState(
+            setpoint=setpoint,
+            disable_charge=None if flags is None else bool(flags & ESS_DISABLE_CHARGE),
+            disable_feed_in=None
+            if flags is None
+            else bool(flags & ESS_DISABLE_FEED_IN),
+        )
+
+    async def write_ess_setpoint(self, address: int, watts: int) -> None:
+        """Write the ESS AC input power setpoint (MK3 sign: negative = import).
+
+        The ESS assistant falls back to its own control when the setpoint is
+        not refreshed for a while, so callers must write it periodically.
+        """
+        record = self._ess_record(address)
+        watts = max(-0x8000, min(int(watts), 0x7FFF))
+        async with self._at_address(address):
+            await self._write_ram_raw_locked(record + ESS_SETPOINT_OFFSET, watts)
+
+    async def write_ess_flags(
+        self,
+        address: int,
+        *,
+        disable_charge: bool | None = None,
+        disable_feed_in: bool | None = None,
+    ) -> EssState:
+        """Change the ESS disable charge / disable feed-in flags."""
+        record = self._ess_record(address)
+        async with self._at_address(address):
+            flags = await self._read_ram_raw_locked(record + ESS_FLAGS_OFFSET) or 0
+            if disable_charge is not None:
+                flags = (
+                    (flags | ESS_DISABLE_CHARGE)
+                    if disable_charge
+                    else (flags & ~ESS_DISABLE_CHARGE)
+                )
+            if disable_feed_in is not None:
+                flags = (
+                    (flags | ESS_DISABLE_FEED_IN)
+                    if disable_feed_in
+                    else (flags & ~ESS_DISABLE_FEED_IN)
+                )
+            await self._write_ram_raw_locked(record + ESS_FLAGS_OFFSET, flags)
+        state = await self.read_ess(address)
+        self.state = replace(self.state, ess={**self.state.ess, address: state})
+        return state
+
+    # ------------------------------------------------------------------
+    # Battery Operational Limits (section 6.4)
+
+    @property
+    def supports_battery_limits(self) -> bool:
+        """Return True if device and interface firmware support BOL."""
+        return (
+            self.firmware is not None
+            and self.firmware.version >= MIN_FIRMWARE_BOL
+            and self.mk3_version is not None
+            and self.mk3_version % 1000 >= MIN_MK3_FIRMWARE_BOL
+        )
+
+    async def send_battery_limits(self, limits: BatteryLimits) -> BatteryLimits:
+        """Send Battery Operational Limits and return the device's reply.
+
+        Warning: the first frame starts the BOL engine of the Multi, which
+        then runs until the Multi is reset. If no limits are received for 5
+        minutes the Multi stops charging AND inverting.
+        """
+        if not self.supports_battery_limits:
+            raise VeBusNotSupportedError(
+                "Battery operational limits need device firmware 415"
+                " and MK3 firmware 203"
+            )
+
+        def word(value: float, size: int) -> list[int]:
+            raw = max(0, min(round(value), (1 << (8 * size)) - 1))
+            return list(raw.to_bytes(size, "little"))
+
+        data = [
+            F_BATTERY_OPERATIONAL_LIMITS,
+            0x0F,  # all four limits present
+            *word(limits.charge_voltage * 100, 2),
+            *word(limits.charge_current * 10, 3),
+            *word(limits.discharge_voltage * 100, 2),
+            *word(limits.discharge_current * 10, 3),
+        ]
+        frame = await self._command(
+            CMD_SPECIAL, data, lambda f: f.marker == MARKER_BOL and len(f.payload) >= 11
+        )
+        assert frame is not None
+        d = frame.payload
+        reply = BatteryLimits(
+            charge_voltage=int.from_bytes(d[1:3], "little") / 100,
+            charge_current=int.from_bytes(d[3:6], "little") / 10,
+            discharge_voltage=int.from_bytes(d[6:8], "little") / 100,
+            discharge_current=int.from_bytes(d[8:11], "little") / 10,
+            timeout=bool(d[0] & 0x80),
+        )
+        self.state = replace(self.state, battery_limits=reply)
+        return reply
+
+    # ------------------------------------------------------------------
     # Devices without info frames
 
     async def read_info_from_ram(self) -> tuple[DcInfo, AcInfo]:
@@ -955,6 +1136,17 @@ class VeBusClient:
         if len(self.units) > 1:
             _LOGGER.info("Found VE.Bus units at addresses %s", self.units)
 
+        # The ESS assistant runs on each phase master: addresses 0, 1, 2 for
+        # L1, L2, L3 (ESS wiki section 3.6.4).
+        masters = [a for a in self.units if a < len(self.phases)]
+        try:
+            await self.find_ess(masters)
+        except (VeBusTimeoutError, VeBusNotSupportedError) as err:
+            _LOGGER.debug("Looking for the ESS assistant failed: %s", err)
+            self.ess_records = {}
+        if self.ess_records:
+            _LOGGER.info("Found ESS assistant records %s", self.ess_records)
+
         # Read everything once so the state is complete from the start.
         self._slow_queue.clear()
         self.state = VeBusState(
@@ -974,6 +1166,8 @@ class VeBusClient:
                 self._slow_queue.append(("setting", (setting,)))
         for setting in SLOW_RAW_SETTINGS:
             self._slow_queue.append(("setting_raw", (setting,)))
+        for address in self.ess_records:
+            self._slow_queue.append(("ess", (address,)))
 
     async def poll(
         self, *, full: bool = False, interface_flags: InterfaceFlag | None = None
@@ -991,6 +1185,7 @@ class VeBusClient:
             settings=dict(self.state.settings),
             settings_raw=dict(self.state.settings_raw),
             units=dict(self.state.units),
+            ess=dict(self.state.ess),
             mk3_version=self.mk3_version,
             firmware=self.firmware,
             phases=self.phases,
@@ -1051,6 +1246,8 @@ class VeBusClient:
             try:
                 if kind == "ram":
                     state.ram.update(await self.read_ram_vars(ids))
+                elif kind == "ess":
+                    state.ess[ids[0]] = await self.read_ess(ids[0])
                 elif kind == "setting_raw":
                     state.settings_raw[ids[0]] = await self.read_setting_raw(ids[0])
                 else:
@@ -1092,6 +1289,7 @@ class VeBusClient:
         interval: float = 2.0,
         interface_flags: Callable[[], InterfaceFlag | None] = lambda: None,
         initialized: bool = False,
+        before_poll: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Connect, poll and reconnect forever (until cancelled).
 
@@ -1109,6 +1307,13 @@ class VeBusClient:
                 failures = 0
                 while True:
                     started = time.monotonic()
+                    if before_poll is not None:
+                        try:
+                            await before_poll()
+                        except VeBusConnectionError:
+                            raise
+                        except VeBusError as err:
+                            _LOGGER.warning("Periodic write failed: %s", err)
                     try:
                         state = await self.poll(interface_flags=interface_flags())
                     except (VeBusTimeoutError, DecodeError) as err:

@@ -19,6 +19,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .const import (
+    MARKER_BOL,
     MARKER_BOOT,
     MARKER_INFO,
     MARKER_MASTER_MULTI_LED,
@@ -28,7 +29,14 @@ from .const import (
 )
 
 KNOWN_MARKERS = frozenset(
-    {MARKER_MK, MARKER_INFO, MARKER_MASTER_MULTI_LED, MARKER_PANEL, MARKER_BOOT}
+    {
+        MARKER_MK,
+        MARKER_INFO,
+        MARKER_MASTER_MULTI_LED,
+        MARKER_PANEL,
+        MARKER_BOOT,
+        MARKER_BOL,
+    }
 )
 
 
