@@ -168,20 +168,16 @@ How the code is organised:
 
 ### Releasing
 
-1. Bump `version` in `custom_components/victron_vebus/manifest.json` (e.g. `0.2.0`) and
-   merge that to `main`.
-2. Tag the merge commit on `main` and push the tag:
+Bump `version` in `custom_components/victron_vebus/manifest.json` (e.g. `0.2.0`) in a
+pull request and merge it to `main`. That's all: the release workflow sees the new
+version, creates the `v0.2.0` tag on the merge commit, publishes the GitHub release with
+generated notes and attaches `victron_vebus.zip`. HACS then offers the new version as
+an update. Versions with a suffix such as `0.2.0-beta1` become pre-releases.
 
-   ```bash
-   git checkout main && git pull
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
-
-The release workflow checks that the tag matches the manifest version, creates the
-GitHub release with generated notes and attaches `victron_vebus.zip`. HACS then offers
-the new version as an update. Tags with a suffix such as `v0.2.0-beta1` become
-pre-releases.
+Pushing a `vX.Y.Z` tag by hand, or publishing a release in the GitHub UI, also works.
+The workflow then only checks that the tag matches the manifest version and attaches
+the zip. A failed release can be retried from the Actions tab (*Release → Run
+workflow*).
 
 ## Credits
 

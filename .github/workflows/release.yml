@@ -1,22 +1,31 @@
 name: Release
 
-# Pushing a tag such as v0.2.0 creates the GitHub release (with generated notes
-# and the zip attached). Releases published by hand through the GitHub UI get
-# the zip attached as well. Tags containing a "-" (v0.2.0-beta1) are marked as
-# pre-releases.
+# A release is created automatically when a new version reaches main: bump
+# "version" in custom_components/victron_vebus/manifest.json and merge. The
+# workflow then creates the vX.Y.Z tag and the GitHub release with generated
+# notes and victron_vebus.zip attached. Versions containing a "-" (0.2.0-beta1)
+# are published as pre-releases. Pushing a v* tag by hand, or publishing a
+# release in the GitHub UI, still works and gets the zip attached.
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - custom_components/victron_vebus/manifest.json
+      - .github/workflows/release.yml
     tags:
       - "v*"
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -26,19 +35,44 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Check that the manifest version matches the tag
+
+      - name: Determine version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version="$(jq -r .version custom_components/victron_vebus/manifest.json)"
-          test "$version" = "${GITHUB_REF_NAME#v}" || {
-            echo "::error::manifest.json version $version does not match tag $GITHUB_REF_NAME"
-            exit 1
-          }
+          tag="v${version}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            # Tag pushed or release published by hand: the tag must match.
+            if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
+              echo "::error::manifest.json version $version does not match tag $GITHUB_REF_NAME"
+              exit 1
+            fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $tag already exists, nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Creating release $tag from $GITHUB_SHA."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build zip
+        if: steps.version.outputs.publish == 'true'
         run: cd custom_components/victron_vebus && zip -r ../../victron_vebus.zip . -x '*/__pycache__/*'
-      - uses: softprops/action-gh-release@v2
+
+      - name: Publish release
+        if: steps.version.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           files: victron_vebus.zip
