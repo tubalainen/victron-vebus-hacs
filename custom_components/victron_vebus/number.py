@@ -107,6 +107,15 @@ SETTING_NUMBERS: tuple[VeBusSettingNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
     ),
     VeBusSettingNumberEntityDescription(
+        key="configured_ac_input_2_current_limit",
+        translation_key="configured_ac_input_2_current_limit",
+        setting=Setting.I_MAINS_LIMIT_AC2,
+        device_class=NumberDeviceClass.CURRENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    VeBusSettingNumberEntityDescription(
         key="solar_wind_priority_voltage",
         translation_key="solar_wind_priority_voltage",
         setting=Setting.SOLAR_WIND_PRIORITY_VOLTAGE,

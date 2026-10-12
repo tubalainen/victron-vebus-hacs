@@ -9,11 +9,11 @@ It is a ground-up rewrite inspired by
 project's known bugs and adds new features. See [docs/ANALYSIS.md](docs/ANALYSIS.md) for
 the analysis and the roadmap.
 
-> **Status:** v0.2 beta. It is developed and tested against a single MultiPlus-II
-> using a protocol simulator, and has not yet been verified on real hardware. The
-> setting controls added in v0.2 in particular are a beta: try them on your device with
-> the command line tool first (see below). Multi-unit systems (parallel or three-phase) are partially supported: phases
-> are detected, but every value comes from the L1 master. Please report your results.
+> **Status:** v0.3 beta. It is developed and tested against a MultiPlus-II using a
+> protocol simulator, and has not yet been verified on real hardware. Treat the setting
+> controls (v0.2) and the multi-unit, Quattro and Compact support (v0.3) as beta: try
+> the controls with the command line tool first (see below), and please report your
+> results.
 
 ## Features
 
@@ -45,6 +45,14 @@ the analysis and the roadmap.
   - Charger settings: absorption and float voltage, charge current, battery capacity.
   - Raw LED states.
   - A diagnostics download with communication statistics and the last raw frames.
+- **Multi-unit systems** (parallel, split-phase and three-phase).
+  - All units on the VE.Bus are found at startup. Each gets its own device, linked to
+    the system device, with AC and battery values, power and device state.
+  - The system's AC input, AC output and battery power are the totals over all units.
+  - Each phase gets its apparent power.
+- **Quattro:** the second AC input's current limit and which input is active.
+- **Phoenix/Compact inverters** that don't send the standard info frames: values are
+  read from RAM variables instead.
 - **Keep awake switch.** It stops a switched-off device from sleeping, which would cut
   the MK3's power.
 - **Optional controls** (off by default):
@@ -53,13 +61,13 @@ the analysis and the roadmap.
   - the `victron_vebus.set_remote_panel_state` action
   - buttons to force absorption, float or equalise
   - charger settings: absorption and float voltage, charge current, configured AC input
-    current limit
+    current limit (and AC input 2 on a Quattro)
   - PowerAssist, weak AC input, UPS function and solar & wind priority switches, plus
     the solar & wind priority voltage. Settings are changed in RAM only.
 
 ## Requirements
 
-- Home Assistant 2026.5 or newer.
+- Home Assistant 2026.8 or newer.
 - A Victron **MK3-USB** interface. The older MK2-USB also works, but without the keep
   awake function.
 - Exactly one program may use the MK3 at a time. Close VictronConnect and VEConfigure
@@ -107,6 +115,9 @@ settings.
 | LED binary sensors (8) | *(disabled)*, with a `blinking` attribute. |
 | Keep awake (switch) | See below. |
 | Solar & wind priority voltage | Diagnostic. Only on firmware 506+ with the feature configured. |
+| Configured AC input 2 current limit | Diagnostic. Only on devices with a second AC input (Quattro). |
+| AC input / output apparent power L1–L3 | Multi-phase systems only. Voltage × current per phase, from the info frames. |
+| *Unit N* AC input/output voltage, current and power; battery voltage, current and power; device state | Multi-unit systems only, one device per unit (*Victron VE.Bus unit N*). Units are read in turn, one per poll. |
 | Remote mode (select), Remote AC input current limit (number) | Only with *Enable control entities*. |
 | Force absorption / float / equalise (buttons) | Only with *Enable control entities*; firmware 400+. |
 | Absorption voltage, Float voltage, Charge current limit, Configured AC input current limit (numbers) | Only with *Enable control entities*; firmware 412+. RAM only, see below. |

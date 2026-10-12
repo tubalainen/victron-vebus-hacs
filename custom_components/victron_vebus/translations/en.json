@@ -241,6 +241,21 @@
       },
       "solar_wind_priority_voltage": {
         "name": "Solar & wind priority voltage"
+      },
+      "configured_ac_input_2_current_limit": {
+        "name": "Configured AC input 2 current limit"
+      },
+      "ac_input_apparent_power": {
+        "name": "AC input apparent power"
+      },
+      "ac_input_apparent_power_phase": {
+        "name": "AC input apparent power {phase}"
+      },
+      "ac_output_apparent_power": {
+        "name": "AC output apparent power"
+      },
+      "ac_output_apparent_power_phase": {
+        "name": "AC output apparent power {phase}"
       }
     },
     "binary_sensor": {
@@ -367,6 +382,9 @@
       },
       "solar_wind_priority_voltage": {
         "name": "Solar & wind priority voltage"
+      },
+      "configured_ac_input_2_current_limit": {
+        "name": "Configured AC input 2 current limit"
       }
     },
     "button": {

@@ -73,6 +73,8 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         self.client = client
         self.identity = identity
         self.keep_awake = True
+        # Device registry id of the system device, parent of the unit devices.
+        self.system_device_id: str | None = None
         self._unavailable_since: float | None = None
         self.data = client.state
 

@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import (
     PERCENTAGE,
     EntityCategory,
+    UnitOfApparentPower,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfFrequency,
@@ -26,7 +27,7 @@ from homeassistant.helpers.typing import StateType
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
 from .entity import VeBusEntity
 from .vebus import AlarmState, ChargeState, DeviceState, Led, Mode, RamVar, Setting
-from .vebus.models import AcInfo, VeBusState
+from .vebus.models import AcInfo, UnitState, VeBusState
 
 PARALLEL_UPDATES = 0
 
@@ -123,10 +124,12 @@ def _active_input(state: VeBusState) -> StateType:
     return AC_INPUTS[state.config.last_active_ac_input]
 
 
-def _negated(var: RamVar) -> Callable[[VeBusState], StateType]:
+def _total(var: RamVar, sign: float = 1.0) -> Callable[[VeBusState], StateType]:
+    """Return a RAM variable summed over all units (just one for most systems)."""
+
     def value(state: VeBusState) -> StateType:
-        raw = state.ram_value(var)
-        return None if raw is None else -raw
+        total = state.total_ram_value(var)
+        return None if total is None else sign * total
 
     return value
 
@@ -139,7 +142,7 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
         suggested_display_precision=0,
-        value_fn=_negated(RamVar.INVERTER_POWER_2),
+        value_fn=_total(RamVar.INVERTER_POWER_2, -1),
     ),
     VeBusSensorEntityDescription(
         key="ac_output_power",
@@ -148,7 +151,7 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
         suggested_display_precision=0,
-        value_fn=_ram(RamVar.OUTPUT_POWER),
+        value_fn=_total(RamVar.OUTPUT_POWER),
     ),
     VeBusSensorEntityDescription(
         key="ac_output_frequency",
@@ -184,7 +187,7 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
         suggested_display_precision=0,
-        value_fn=_ram(RamVar.INVERTER_POWER_1),
+        value_fn=_total(RamVar.INVERTER_POWER_1),
     ),
     VeBusSensorEntityDescription(
         key="charger_current",
@@ -372,6 +375,16 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         ),
     ),
     VeBusSensorEntityDescription(
+        key="configured_ac_input_2_current_limit",
+        translation_key="configured_ac_input_2_current_limit",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_setting(Setting.I_MAINS_LIMIT_AC2),
+        exists_fn=_has_setting(Setting.I_MAINS_LIMIT_AC2),
+    ),
+    VeBusSensorEntityDescription(
         key="battery_capacity",
         translation_key="battery_capacity",
         native_unit_of_measurement="Ah",
@@ -447,6 +460,139 @@ PHASE_SENSORS: tuple[VeBusPhaseSensorEntityDescription, ...] = (
 )
 
 
+# Apparent power per phase, only for multi-phase systems.
+PHASE_POWER_SENSORS: tuple[VeBusPhaseSensorEntityDescription, ...] = (
+    VeBusPhaseSensorEntityDescription(
+        key="ac_input_apparent_power",
+        device_class=SensorDeviceClass.APPARENT_POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
+        suggested_display_precision=0,
+        phase_value_fn=lambda ac: abs(ac.mains_voltage * ac.mains_current),
+    ),
+    VeBusPhaseSensorEntityDescription(
+        key="ac_output_apparent_power",
+        device_class=SensorDeviceClass.APPARENT_POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
+        suggested_display_precision=0,
+        phase_value_fn=lambda ac: abs(ac.inverter_voltage * ac.inverter_current),
+    ),
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class VeBusUnitSensorEntityDescription(SensorEntityDescription):
+    """Describes a sensor of one unit in a multi-unit system."""
+
+    unit_value_fn: Callable[[UnitState], StateType]
+
+
+def _unit_ram(var: RamVar, sign: float = 1.0) -> Callable[[UnitState], StateType]:
+    def value(unit: UnitState) -> StateType:
+        raw = unit.ram_value(var)
+        return None if raw is None else sign * raw
+
+    return value
+
+
+def _unit_device_state(unit: UnitState) -> StateType:
+    info = unit.device_state
+    return info.state.value if info is not None and info.state is not None else None
+
+
+UNIT_SENSORS: tuple[VeBusUnitSensorEntityDescription, ...] = (
+    VeBusUnitSensorEntityDescription(
+        key="ac_input_voltage",
+        translation_key="ac_input_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        suggested_display_precision=1,
+        unit_value_fn=_unit_ram(RamVar.U_MAINS_RMS),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="ac_input_current",
+        translation_key="ac_input_current",
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=2,
+        unit_value_fn=_unit_ram(RamVar.I_MAINS_RMS),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="ac_input_power",
+        translation_key="ac_input_power",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=0,
+        unit_value_fn=_unit_ram(RamVar.INVERTER_POWER_2, -1),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="ac_output_voltage",
+        translation_key="ac_output_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        suggested_display_precision=1,
+        unit_value_fn=_unit_ram(RamVar.U_INVERTER_RMS),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="ac_output_current",
+        translation_key="ac_output_current",
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=2,
+        unit_value_fn=_unit_ram(RamVar.I_INVERTER_RMS),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="ac_output_power",
+        translation_key="ac_output_power",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=0,
+        unit_value_fn=_unit_ram(RamVar.OUTPUT_POWER),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="battery_voltage",
+        translation_key="battery_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        suggested_display_precision=2,
+        unit_value_fn=_unit_ram(RamVar.U_BAT),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="battery_current",
+        translation_key="battery_current",
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=1,
+        unit_value_fn=_unit_ram(RamVar.I_BAT),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="battery_power",
+        translation_key="battery_power",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=0,
+        unit_value_fn=_unit_ram(RamVar.INVERTER_POWER_1),
+    ),
+    VeBusUnitSensorEntityDescription(
+        key="device_state",
+        translation_key="device_state",
+        device_class=SensorDeviceClass.ENUM,
+        options=[state.value for state in DeviceState],
+        unit_value_fn=_unit_device_state,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: VeBusConfigEntry,
@@ -461,11 +607,19 @@ async def async_setup_entry(
     ]
     phases = coordinator.identity.phases
     multi_phase = len(phases) > 1
+    phase_descriptions = (
+        (*PHASE_SENSORS, *PHASE_POWER_SENSORS) if multi_phase else PHASE_SENSORS
+    )
     for phase in phases:
-        for description in PHASE_SENSORS:
+        for description in phase_descriptions:
             entities.append(
                 VeBusPhaseSensor(coordinator, description, phase, multi_phase)
             )
+    units = coordinator.identity.units
+    if len(units) > 1:
+        for address in units:
+            for unit_description in UNIT_SENSORS:
+                entities.append(VeBusUnitSensor(coordinator, unit_description, address))
     async_add_entities(entities)
 
 
@@ -516,3 +670,25 @@ class VeBusPhaseSensor(VeBusEntity, SensorEntity):
         """Return the state of the sensor."""
         ac = self.coordinator.data.ac.get(self._phase)
         return None if ac is None else self.entity_description.phase_value_fn(ac)
+
+
+class VeBusUnitSensor(VeBusEntity, SensorEntity):
+    """A sensor of one unit of a multi-unit system."""
+
+    entity_description: VeBusUnitSensorEntityDescription
+
+    def __init__(
+        self,
+        coordinator: VeBusCoordinator,
+        description: VeBusUnitSensorEntityDescription,
+        address: int,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, description, unit=address)
+        self._address = address
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        unit = self.coordinator.data.units.get(self._address)
+        return None if unit is None else self.entity_description.unit_value_fn(unit)

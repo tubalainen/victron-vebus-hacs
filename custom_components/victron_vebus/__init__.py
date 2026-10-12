@@ -8,7 +8,7 @@ import logging
 from homeassistant.const import CONF_DEVICE, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -18,6 +18,7 @@ from .const import (
     SETUP_TIMEOUT,
 )
 from .coordinator import VeBusConfigEntry, VeBusCoordinator, VeBusRuntimeData
+from .entity import system_device_info
 from .services import async_setup_services
 from .vebus import Setting, VeBusClient, VeBusError
 
@@ -33,6 +34,7 @@ WRITABLE_SETTINGS = (
     Setting.U_BAT_FLOAT,
     Setting.I_BAT_BULK,
     Setting.I_MAINS_LIMIT_AC1,
+    Setting.I_MAINS_LIMIT_AC2,
     Setting.SOLAR_WIND_PRIORITY_VOLTAGE,
 )
 
@@ -73,6 +75,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: VeBusConfigEntry) -> boo
             )
 
     coordinator = VeBusCoordinator(hass, entry, client, identity)
+    # Register the system device first so unit devices can refer to it.
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, **system_device_info(coordinator)
+    )
+    coordinator.system_device_id = device.id
     platforms = _platforms(entry)
     entry.runtime_data = VeBusRuntimeData(
         client=client, coordinator=coordinator, platforms=platforms

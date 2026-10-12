@@ -50,6 +50,9 @@
       },
       "solar_wind_priority_voltage": {
         "default": "mdi:solar-power-variant"
+      },
+      "configured_ac_input_2_current_limit": {
+        "default": "mdi:transmission-tower-import"
       }
     },
     "binary_sensor": {
@@ -160,6 +163,9 @@
       },
       "solar_wind_priority_voltage": {
         "default": "mdi:solar-power-variant"
+      },
+      "configured_ac_input_2_current_limit": {
+        "default": "mdi:transmission-tower-import"
       }
     },
     "button": {

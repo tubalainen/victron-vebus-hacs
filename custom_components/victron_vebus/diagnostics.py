@@ -30,6 +30,12 @@ async def async_get_config_entry_diagnostics(
         "mk3_version": client.mk3_version,
         "firmware": client.firmware.raw if client.firmware else None,
         "phases": list(client.phases),
+        "units": list(client.units),
+        "unit_firmware": {
+            str(address): firmware.raw if firmware else None
+            for address, firmware in client.unit_firmware.items()
+        },
+        "info_frames": client.info_frames,
         "interface_flags_supported": client.interface_flags_supported,
         "keep_awake": coordinator.keep_awake,
         "last_update_success": coordinator.last_update_success,
