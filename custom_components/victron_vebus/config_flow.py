@@ -45,6 +45,7 @@ from .actions import (
 )
 from .const import (
     CONF_ACKNOWLEDGE,
+    CONF_ALARM_ISSUES,
     CONF_ENABLE_BATTERY_LIMITS,
     CONF_ENABLE_CONTROLS,
     CONF_SCAN_INTERVAL,
@@ -377,6 +378,7 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                     mode=NumberSelectorMode.BOX,
                 )
             ),
+            vol.Required(CONF_ALARM_ISSUES, default=True): BooleanSelector(),
         }
         if self.config_entry.options.get(CONF_ENABLE_CONTROLS, False):
             fields[vol.Required(CONF_ENABLE_BATTERY_LIMITS, default=False)] = (

@@ -19,7 +19,7 @@ It is a ground-up rewrite inspired by
 project's known bugs and adds new features. See [docs/ANALYSIS.md](docs/ANALYSIS.md) for
 the analysis and the roadmap.
 
-> **Status:** v0.5 beta. It is developed and tested against a MultiPlus-II using a
+> **Status:** v0.6 beta. It is developed and tested against a MultiPlus-II using a
 > protocol simulator, and has not yet been verified on real hardware. Treat everything
 > beyond monitoring as beta: try the controls with the command line tool first (see
 > below), and please report your results.
@@ -43,15 +43,23 @@ the analysis and the roadmap.
   - AC input and output power.
   - Battery voltage, current and power; charger and inverter DC current; battery ripple.
   - State of charge, when the built-in battery monitor is configured.
+- **Energy** for the Home Assistant Energy dashboard: energy taken from and fed into
+  the grid, energy delivered to the loads, and battery energy charged and discharged
+  (kWh, integrated from the power readings).
 - **States.**
   - Device state (inverting, passthru, charging, ...) and charge state (bulk,
     absorption, float, ...).
   - Effective mode and front switch position.
   - Overload, low battery and temperature alarms (ok / warning / alarm).
-  - AC input connected, the multi-functional relay and the "ignore AC input" state.
+  - **Alarm notifications:** an *Alarm* event entity for automations, and a repair
+    issue while an alarm is active.
+  - AC input connected, the multi-functional relay, the virtual switch and the "ignore
+    AC input" state.
 - **Diagnostics.**
   - Firmware version, input current limit and its range.
-  - Charger settings: absorption and float voltage, charge current, battery capacity.
+  - Charger settings: absorption and float voltage, charge current, battery capacity,
+    charge characteristic and maximum absorption time.
+  - Inverter output voltage, low battery shutdown and restart voltage.
   - Raw LED states.
   - A diagnostics download with communication statistics and the last raw frames.
 - **Multi-unit systems** (parallel, split-phase and three-phase).
@@ -108,6 +116,7 @@ the analysis and the roadmap.
 | Option | Default | Description |
 |---|---|---|
 | Polling interval | 2 s | The MK3 runs at 2400 baud and a full poll takes about one second. |
+| Show alarms as repair issues | on | Raise a repair issue while an overload, low battery or temperature alarm is active. See [Alarm notifications](#alarm-notifications). |
 | Enable battery operational limits | off | Only with *Monitor and control*. See [Battery operational limits](#battery-operational-limits-advanced-beta). |
 
 Monitoring or control is not an option here: it is chosen when the integration is
@@ -131,10 +140,13 @@ settings.
 | Charge state | not_charging, init, bulk, absorption, float, storage, repeated/forced absorption, equalise, bulk_stopped |
 | Mode, Front switch | The mode in effect and the physical switch position. |
 | Overload / Low battery / Temperature alarm | ok, warning (LED blinking), alarm (LED on) |
+| Alarm (event) | Fires when an alarm starts, escalates or clears. See [Alarm notifications](#alarm-notifications). |
+| AC input energy imported / exported, AC output energy, Battery energy charged / discharged | kWh for the Energy dashboard. See [Energy](#energy). |
 | AC input connected | Mains LED lit, i.e. the AC input relay is closed. |
-| Relay, Ignore AC input | Diagnostic. |
+| Relay, Virtual switch, Ignore AC input | Diagnostic. |
 | AC input current limit (+ min/max) | Diagnostic; min/max are *(disabled)*. |
 | Absorption / float voltage, charge current limit, battery capacity | Diagnostic, read from the device settings. |
+| Inverter output voltage, Low battery shutdown / restart voltage, Charge characteristic, Maximum absorption time | Diagnostic, read from the device settings. The restart voltage is the shutdown voltage plus its hysteresis. |
 | Firmware version, MK3 interface version | Diagnostic. |
 | LED binary sensors (8) | *(disabled)*, with a `blinking` attribute. |
 | Keep awake (switch) | See below. |
@@ -150,6 +162,58 @@ settings.
 | Force absorption / float (buttons) | *Monitor and control*; firmware 400+. Equalisation is a guided device action. |
 | Charge current limit, Configured AC input (2) current limit (numbers) | *Monitor and control*; firmware 412+. RAM only. Charge voltages are guided device actions. |
 | Solar & wind priority (switch), Solar & wind priority voltage (number) | *Monitor and control*; firmware 506+ and the feature configured. RAM only. |
+
+### Energy
+
+VE.Bus devices have no energy counters that can be read through the MK3 (a GX device
+calculates them the same way), so the integration integrates the power readings over
+time. The totals are kept across restarts.
+
+| Energy dashboard | Entity |
+|---|---|
+| Grid consumption | AC input energy imported |
+| Return to grid | AC input energy exported |
+| Battery: energy going in / out | Battery energy charged / discharged |
+| Individual device | AC output energy |
+
+- The values are estimates. They are as accurate as the device's power readings and
+  are sampled at the polling interval (2 s by default); short peaks between polls are
+  missed. Expect a few percent difference from a calibrated energy meter.
+- Nothing is counted while the device is unreachable or Home Assistant is stopped.
+- Battery energy is measured on the DC side of the Multi. It does not include solar
+  chargers or DC loads connected directly to the battery.
+- AC output energy counts power going to the loads; power fed back from the AC output
+  (e.g. an AC-coupled PV inverter) is not counted.
+- In multi-unit systems the energy is the total of all units.
+
+### Alarm notifications
+
+The Multi signals three alarms with its LEDs: **overload**, **low battery** and
+**temperature**. A blinking LED is a *warning* (pre-alarm); a lit LED is an *alarm*,
+and the Multi usually switches off the inverter, so the AC outputs can lose power.
+
+- The **Alarm** event entity fires `<alarm>_warning`, `<alarm>_alarm` and
+  `<alarm>_cleared` (for example `low_battery_warning`), with the attributes `alarm`
+  and `level`. An alarm that is already active when Home Assistant starts is reported
+  too.
+- While an alarm is active, a **repair issue** explains what it means and what to
+  check. It disappears when the alarm clears. Turn off *Show alarms as repair issues*
+  in the integration settings if you don't want them.
+
+Example: a notification on your phone for every alarm and warning.
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: event.victron_ve_bus_alarm
+actions:
+  - action: notify.mobile_app_my_phone
+    data:
+      title: Victron alarm
+      message: >
+        {{ state_attr('event.victron_ve_bus_alarm', 'alarm') }}:
+        {{ state_attr('event.victron_ve_bus_alarm', 'level') }}
+```
 
 ### Keep awake
 

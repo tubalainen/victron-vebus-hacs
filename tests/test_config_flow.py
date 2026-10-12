@@ -12,6 +12,7 @@ from homeassistant.helpers.service_info.usb import UsbServiceInfo
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.victron_vebus.const import (
+    CONF_ALARM_ISSUES,
     CONF_ENABLE_BATTERY_LIMITS,
     CONF_ENABLE_CONTROLS,
     CONF_SCAN_INTERVAL,
@@ -288,8 +289,8 @@ async def test_options_flow(
         assert result["step_id"] == "settings"
         assert CONF_ENABLE_BATTERY_LIMITS not in result["data_schema"].schema
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SCAN_INTERVAL: 5}
+            result["flow_id"], {CONF_SCAN_INTERVAL: 5, CONF_ALARM_ISSUES: False}
         )
         await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert config_entry.options == {CONF_SCAN_INTERVAL: 5}
+    assert config_entry.options == {CONF_SCAN_INTERVAL: 5, CONF_ALARM_ISSUES: False}

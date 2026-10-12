@@ -94,6 +94,13 @@ BINARY_SENSORS: tuple[VeBusBinarySensorEntityDescription, ...] = (
         exists_fn=_has_ram(RamVar.MULTI_FUNCTIONAL_RELAY_STATE),
     ),
     VeBusBinarySensorEntityDescription(
+        key="virtual_switch",
+        translation_key="virtual_switch",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_ram_bit(RamVar.VIRTUAL_SWITCH_POSITION),
+        exists_fn=_has_ram(RamVar.VIRTUAL_SWITCH_POSITION),
+    ),
+    VeBusBinarySensorEntityDescription(
         key="ignore_ac_input",
         translation_key="ignore_ac_input",
         entity_category=EntityCategory.DIAGNOSTIC,

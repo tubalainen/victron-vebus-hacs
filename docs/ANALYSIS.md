@@ -80,6 +80,7 @@ was used where it agrees with the specification.
 | **0.3** | Address scan (stop after 3 misses) with one device per unit, linked to the system device. Per-unit values from RAM variables read at each unit's address, round-robin. System power totals over all units, and apparent power per phase. Quattro AC input 2 limit (setting 49, number of inputs from `F` 5). A RAM-variable fallback for devices without standard info frames, such as the Compact (j9brown issue #11). |
 | **0.4** (beta) | ESS: the assistant is found from RAM 128 (ESS id 5) on every phase master. The setpoint (per phase) is written with WriteRAMVar/WriteData under an *ESS external control* switch, refreshed at least every 10 s and reset to 0 W when control stops. Disable-charge and disable-feed-in switches. Battery Operational Limits (`F` 9) behind a separate, warned option. |
 | **0.5** (beta) | Safety. The user chooses *Monitor only* or *Monitor and control* when adding the integration and with Reconfigure; control needs an explicit warning to be confirmed. Everything that can cut the power on the AC outputs, restart the Multi, change charge voltages or write the EEPROM moved from dashboard entities to guided device actions in the options flow, each with a risk dialog and an "I understand" checkbox: mode, passthru, charge voltages and other settings (RAM or permanent), PowerAssist / weak AC / UPS, equalisation and restart (`F` 8). Permanent (EEPROM) writes via `0x37` flags 0x01, rate-limited to one per setting every 5 minutes. The remote panel action requires `acknowledge_risk`. Disclaimer in the README and the setup dialogs. |
+| **0.6** (beta) | Energy sensors for the Energy dashboard (grid import/export, AC output, battery charged/discharged), integrated from the filtered power RAM variables with the trapezoidal rule and restored across restarts. Alarm notifications: an event entity and repair issues driven by the overload, low battery and temperature LEDs. Status sensors: virtual switch (RAM 10), inverter output voltage (setting 5), maximum absorption time (9), charge characteristic (10), low battery shutdown (11) and restart voltage (11 + 12). |
 
 ## 5. Things to verify on real hardware
 
@@ -144,3 +145,19 @@ v0.5 adds these, verified only against the simulator:
 - **Permanent writes:** WriteViaID (`0x37`) with flags 0x01 (setting, without the
   RAM-only bit) stores the value in the EEPROM. The spec does not say whether the
   device restarts or whether every setting takes effect without one.
+
+v0.6 adds these, verified only against the simulator:
+
+- **Energy:** the energy sensors are only as good as the power RAM variables
+  (14–16). In particular the sign of RAM 15 (AC input power, negated) decides
+  import versus export. Compare with an energy meter over a day.
+- **Settings units:** setting 5 is the inverter output voltage in V, setting 9 the
+  maximum absorption time in hours (1 for the LiFePO4 profile), and setting 10 the
+  charge characteristic (0 variable, 1 fixed, 2 fixed with storage), per
+  xcellsior FINDINGS.md §7.5. Setting 12 is the restart offset above the shutdown
+  voltage (setting 11).
+- **Alarm LEDs:** blinking is read as a pre-alarm (warning) and lit as an alarm.
+- **UPS flag and bit 7:** the spec says Flags[7] "must have the inverted value of
+  flags[3]", but FINDINGS.md §7.1 shows VEConfigure changing only bit 3 when switching
+  the UPS function (MultiPlus `0x81B4` ↔ `0x81BC`), and bit 7 differs by model. The
+  integration therefore changes only bit 3, like VEConfigure.

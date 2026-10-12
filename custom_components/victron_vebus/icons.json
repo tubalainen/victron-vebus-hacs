@@ -59,6 +59,36 @@
       },
       "ess_active_setpoint_phase": {
         "default": "mdi:transmission-tower"
+      },
+      "ac_input_energy_imported": {
+        "default": "mdi:transmission-tower-import"
+      },
+      "ac_input_energy_exported": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "ac_output_energy": {
+        "default": "mdi:home-lightning-bolt-outline"
+      },
+      "battery_energy_charged": {
+        "default": "mdi:battery-arrow-up-outline"
+      },
+      "battery_energy_discharged": {
+        "default": "mdi:battery-arrow-down-outline"
+      },
+      "inverter_output_voltage": {
+        "default": "mdi:sine-wave"
+      },
+      "low_battery_shutdown_voltage": {
+        "default": "mdi:battery-off-outline"
+      },
+      "low_battery_restart_voltage": {
+        "default": "mdi:battery-sync-outline"
+      },
+      "charge_characteristic": {
+        "default": "mdi:chart-bell-curve-cumulative"
+      },
+      "maximum_absorption_time": {
+        "default": "mdi:timer-outline"
       }
     },
     "binary_sensor": {
@@ -133,6 +163,17 @@
       },
       "ups_function": {
         "default": "mdi:power-plug-battery"
+      },
+      "virtual_switch": {
+        "default": "mdi:toggle-switch-variant-off",
+        "state": {
+          "on": "mdi:toggle-switch-variant"
+        }
+      }
+    },
+    "event": {
+      "alarm": {
+        "default": "mdi:alarm-light-outline"
       }
     },
     "switch": {
