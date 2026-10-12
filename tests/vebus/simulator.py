@@ -41,6 +41,7 @@ MP2_SETTING_INFO_RAW: dict[int, tuple[int, int, int, int, int]] = {
     3: (0x10000 - 100, 0, 2760, 2400, 3200),
     4: (1, 0, 70, 0, 70),
     6: (0x10000 - 10, 0, 320, 10, 500),
+    49: (0x10000 - 10, 0, 160, 10, 500),  # Quattro only
     60: (1, 0, 0x0210, 0, 0x0FFF),
     64: (1, 0, 0, 0, 9999),
     88: (0x10000 - 100, 0, 2760, 2400, 3200),
@@ -79,6 +80,8 @@ class SimulatedMultiPlus:
             4: 2641,
             5: 0,
             6: 5,
+            7: 0x88,  # inverter period
+            8: 195,  # mains period
             9: 0,
             11: 0x00,
             12: 0x20,
@@ -109,6 +112,20 @@ class SimulatedMultiPlus:
     # (flags, setting, value) of every WriteViaID.
     writes: list[tuple[int, int, int]] = field(default_factory=list)
     forced: list[int] = field(default_factory=list)
+    # VE.Bus address selected with 'A'; other units by address with their
+    # RAM values (address 0 is this device).
+    address: int = 0
+    units: dict[int, dict[int, int]] = field(default_factory=dict)
+    # False for devices that do not answer the 'F' info frames (Compact).
+    info_frames: bool = True
+    # A Quattro has a second AC input (setting 49, two inputs in 'F' 5).
+    quattro: bool = False
+
+    def __post_init__(self) -> None:
+        """Add the Quattro AC input 2 limit."""
+        if self.quattro:
+            self.settings[49] = 120
+
     dc_charger_current: int = 123  # 0.1 A
     dc_inverter_current: int = 0
     received: list[bytes] = field(default_factory=list)
@@ -125,7 +142,9 @@ class SimulatedMultiPlus:
                 encode_frame(ord("V"), [*self.mk3_version.to_bytes(4, "little"), 0x42])
             ]
         if cmd == "A":
-            return [encode_frame(ord("A"), [data[0], data[1]])]
+            if data[0] & 0x01:
+                self.address = data[1]
+            return [encode_frame(ord("A"), [data[0], self.address])]
         if cmd == "D":
             return [encode_frame(ord("D"), [3, *_u16(self.current_limit), 0, 0])]
         if cmd == "S":
@@ -146,6 +165,8 @@ class SimulatedMultiPlus:
         if cmd == "F":
             return self._special(data[0])
         if cmd in "WXYZ":
+            if self.address != 0 and self.address not in self.units:
+                return []  # nobody at this address
             reply = self._winmon(data)
             return [encode_frame(frame.command or 0, reply)] if reply else []
         return []
@@ -160,6 +181,8 @@ class SimulatedMultiPlus:
             self.current_limit = max(self.min_limit, min(limit, self.max_limit))
 
     def _special(self, kind: int) -> list[bytes]:
+        if not self.info_frames and kind <= 4:
+            return []
         if kind == 0:
             d = [0, 0, 0, 0, 0x0C, *_u16(self.ram[4])]
             d += list(self.dc_inverter_current.to_bytes(3, "little"))
@@ -180,7 +203,8 @@ class SimulatedMultiPlus:
             d.append(0xC3)
             return [_raw_frame(0x20, d)]
         if kind == 5:
-            d = [0x10, self.leds_on, self.leds_blink, 0, 0x10]
+            inputs = 0x20 if self.quattro else 0x10
+            d = [0x10, self.leds_on, self.leds_blink, 0, inputs]
             d += _u16(self.min_limit) + _u16(self.max_limit) + _u16(self.current_limit)
             d.append(self.switch_register)
             return [_raw_frame(0x41, d)]
@@ -211,11 +235,12 @@ class SimulatedMultiPlus:
             self.settings[setting] = value
             return [0x88, 0x00, 0x00] if self.ack_writes else []
         if cmd == 0x30:
+            ram = self.units[self.address] if self.address else self.ram
             values: list[int] = []
             for var in args:
-                if var not in self.ram:
+                if var not in ram:
                     return [0x90, 0, 0]
-                values += _u16(self.ram[var])
+                values += _u16(ram[var])
             return [0x85, *values]
         if cmd == 0x36:
             var = args[0] | args[1] << 8
@@ -225,7 +250,9 @@ class SimulatedMultiPlus:
             return [0x8E, *_u16(scale), 0x8F, *_u16(offset)]
         if cmd == 0x35:
             setting = args[0] | args[1] << 8
-            if setting not in MP2_SETTING_INFO_RAW:
+            if setting not in MP2_SETTING_INFO_RAW or (
+                setting == 49 and not self.quattro
+            ):
                 return [0x91, 0, 0]
             sc, off, default, minimum, maximum = MP2_SETTING_INFO_RAW[setting]
             if self.long_frames:

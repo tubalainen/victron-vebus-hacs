@@ -245,6 +245,20 @@ class DeviceStateInfo:
 
 
 @dataclass(slots=True)
+class UnitState:
+    """Values read from one unit of a multi-unit (parallel/three-phase) system."""
+
+    address: int
+    firmware: FirmwareVersion | None = None
+    device_state: DeviceStateInfo | None = None
+    ram: dict[int, float | None] = field(default_factory=dict)
+
+    def ram_value(self, var: int) -> float | None:
+        """Return a decoded RAM variable of this unit."""
+        return self.ram.get(var)
+
+
+@dataclass(slots=True)
 class VeBusState:
     """Snapshot of everything read from a VE.Bus device."""
 
@@ -260,11 +274,29 @@ class VeBusState:
     settings: dict[int, float | None] = field(default_factory=dict)
     settings_raw: dict[int, int | None] = field(default_factory=dict)
     interface_flags: int | None = None
+    # Units by VE.Bus address; empty for a single-unit system.
+    units: dict[int, UnitState] = field(default_factory=dict)
+    # False when the device does not answer info frames and values come from
+    # RAM variables instead (e.g. Phoenix/Compact inverters).
+    info_frames: bool = True
     timestamp: float = field(default_factory=time.monotonic)
 
     def ram_value(self, var: int) -> float | None:
         """Return a decoded RAM variable."""
         return self.ram.get(var)
+
+    def total_ram_value(self, var: int) -> float | None:
+        """Return a RAM variable summed over all units.
+
+        For a single unit this is the value of that unit. None if any unit
+        has no value.
+        """
+        if not self.units:
+            return self.ram.get(var)
+        values = [unit.ram.get(var) for unit in self.units.values()]
+        if any(value is None for value in values):
+            return None
+        return sum(value for value in values if value is not None)
 
     def setting_value(self, setting: int) -> float | None:
         """Return a decoded setting."""

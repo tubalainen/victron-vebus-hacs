@@ -105,6 +105,10 @@ async def cmd_info(args: argparse.Namespace) -> None:
         print(f"MK3 version: {client.mk3_version}")
         print(f"Firmware:    {client.firmware}")
         print(f"Phases:      {client.phases}")
+        print(f"Info frames: {client.info_frames}")
+        print(f"Units:       {client.units}")
+        for address, firmware in sorted(client.unit_firmware.items()):
+            print(f"  unit {address}: firmware {firmware}")
         print("RAM variable info:")
         for var, info in sorted(client.ram_var_info.items()):
             print(f"  {var:3d} {RamVar(var).name:30s} {info}")
