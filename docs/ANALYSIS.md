@@ -76,8 +76,8 @@ was used where it agrees with the specification.
 | Version | Scope |
 |---|---|
 | **0.1** | Monitoring of a single VE.Bus device. Opt-in mode and current-limit controls. Keep awake. Reconnect. Diagnostics. Protocol simulator and tests. |
-| **0.2** (beta) | Buttons to force absorption, float or equalise (`0x0E` 1/2/3, firmware ≥ 400). RAM-only setting changes via `0x37` flags 0x03 in a long-frame session, with read-back and the bit masks reported by `0x35`: absorption/float voltage, charge current, configured AC input limit, PowerAssist, weak AC input, UPS function. Solar and wind priority (settings 60 and 88, j9brown issue #14 and PR #15). Passthru (limit 0) stays available through the action. |
-| 0.3 | Address scan (stop after 3 misses) with one device per unit. Three-phase, split-phase and parallel support. Quattro AC input 2 limit (setting 49). A RAM-variable fallback for devices without standard info frames, such as the Compact (j9brown issue #11). |
+| **0.2** | Buttons to force absorption, float or equalise (`0x0E` 1/2/3, firmware ≥ 400). RAM-only setting changes via `0x37` flags 0x03 in a long-frame session, with read-back and the bit masks reported by `0x35`: absorption/float voltage, charge current, configured AC input limit, PowerAssist, weak AC input, UPS function. Solar and wind priority (settings 60 and 88, j9brown issue #14 and PR #15). Passthru (limit 0) stays available through the action. |
+| **0.3** (beta) | Address scan (stop after 3 misses) with one device per unit, linked to the system device. Per-unit values from RAM variables read at each unit's address, round-robin. System power totals over all units, and apparent power per phase. Quattro AC input 2 limit (setting 49, number of inputs from `F` 5). A RAM-variable fallback for devices without standard info frames, such as the Compact (j9brown issue #11). |
 | 0.4 | ESS: scan for the assistant starting at RAM 128 (ESS has id 5). A setpoint number with periodic refresh, disable-charge and disable-feed-in switches. Optionally, Battery Operational Limits (`F` 9). |
 
 ## 5. Things to verify on real hardware
@@ -108,3 +108,16 @@ v0.2 adds these, verified only against the simulator. Check them with the CLI's
 - **Flag bits:** PowerAssist is bit 5 of setting 0, weak AC bit 14 and UPS bit 3 (set =
   UPS off). Solar and wind priority is bit 9 of setting 60, with its voltage in setting
   88.
+
+v0.3 adds these, verified only against the simulator:
+
+- **Address scan:** each address 1..31 is selected with `A 01 <addr>` and asked for its
+  firmware version. The scan stops after three addresses in a row give no answer, and
+  the home address is selected again afterwards. Units in a VE.Bus system must be
+  identical, so the RAM variable scaling of address 0 is used for every unit.
+- **Phase mapping:** which unit is on which phase is not determined. By convention,
+  addresses 0, 1 and 2 are the L1, L2 and L3 masters.
+- **RAM fallback for Compact and Phoenix devices:** battery current (RAM 5) is assumed
+  to be positive while charging.
+- **Quattro:** setting 49 is the AC input 2 limit, and bits 4–6 of the `F` 5 input
+  configuration byte give the number of inputs (firmware 415 or newer).

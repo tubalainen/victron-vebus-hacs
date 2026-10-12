@@ -68,6 +68,7 @@ from .models import (
     LedInfo,
     RamVarInfo,
     SettingInfo,
+    UnitState,
     VeBusState,
 )
 from .transport import CONNECTION_ERRORS, Opener
@@ -104,6 +105,7 @@ SLOW_SETTINGS: tuple[Setting, ...] = (
     Setting.U_BAT_FLOAT,
     Setting.I_BAT_BULK,
     Setting.I_MAINS_LIMIT_AC1,
+    Setting.I_MAINS_LIMIT_AC2,
     Setting.BATTERY_CAPACITY,
     Setting.SOLAR_WIND_PRIORITY_VOLTAGE,
 )
@@ -115,6 +117,22 @@ RAM_VARS: tuple[RamVar, ...] = (
     *FAST_RAM_VARS,
     *itertools.chain.from_iterable(SLOW_RAM_VARS),
 )
+# RAM variables read from every unit of a multi-unit system, in groups of three.
+UNIT_RAM_VARS: tuple[tuple[RamVar, ...], ...] = (
+    (RamVar.U_MAINS_RMS, RamVar.I_MAINS_RMS, RamVar.U_INVERTER_RMS),
+    (RamVar.I_INVERTER_RMS, RamVar.U_BAT, RamVar.I_BAT),
+    FAST_RAM_VARS,
+)
+# RAM variables replacing the info frames on devices that do not send them.
+INFO_RAM_VARS: tuple[tuple[RamVar, ...], ...] = (
+    (RamVar.U_MAINS_RMS, RamVar.I_MAINS_RMS, RamVar.U_INVERTER_RMS),
+    (RamVar.I_INVERTER_RMS, RamVar.U_BAT, RamVar.I_BAT),
+    (RamVar.INVERTER_PERIOD, RamVar.MAINS_PERIOD),
+)
+# VE.Bus addresses are 0..31. A scan stops after this many missing addresses
+# in a row (section 7.2).
+MAX_ADDRESS = 0x1F
+SCAN_MISSES = 3
 # The MultiPlus-II reports the inverter current as unsigned but sends negative
 # values while charging, so it is always decoded as signed.
 FORCE_SIGNED_RAM_VARS = frozenset({RamVar.I_INVERTER_RMS})
@@ -183,6 +201,7 @@ class DeviceIdentity:
     mk3_version: int | None
     firmware: FirmwareVersion | None
     phases: tuple[int, ...]
+    units: tuple[int, ...] = (0,)
 
 
 class VeBusClient:
@@ -226,6 +245,12 @@ class VeBusClient:
         self._interface_flag_failures = 0
         self.state = VeBusState()
         self._slow_queue: deque[tuple[str, tuple[int, ...]]] = deque()
+        # Addresses of all units; just the home address for a single unit.
+        self.units: tuple[int, ...] = (address,)
+        self.unit_firmware: dict[int, FirmwareVersion | None] = {}
+        self._unit_queue: deque[int] = deque()
+        # False when the device does not answer info frames ('F' 0..4).
+        self.info_frames = True
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -538,12 +563,19 @@ class VeBusClient:
 
     async def read_ram_vars(self, variables: Iterable[int]) -> dict[int, float | None]:
         """Read up to three RAM variables in one request and decode them."""
+        async with self._lock:
+            await self._prepare()
+            return await self._read_ram_vars_locked(variables)
+
+    async def _read_ram_vars_locked(
+        self, variables: Iterable[int]
+    ) -> dict[int, float | None]:
         ids = list(variables)
         if not 1 <= len(ids) <= 3:
             raise ValueError("between 1 and 3 variables can be read at once")
         # A single ID is sent as a 16-bit value, which every firmware understands.
         args = [ids[0], 0] if len(ids) == 1 else ids
-        reply = await self._winmon(WinmonCommand.READ_RAM_VAR, *args)
+        reply = await self._winmon_locked(WinmonCommand.READ_RAM_VAR, *args)
         result: dict[int, float | None] = {}
         for var, raw in zip(ids, decode_ram_values(reply, len(ids)), strict=True):
             info = self.ram_var_info.get(var)
@@ -622,12 +654,12 @@ class VeBusClient:
         The Winmon mode 1 reply can be cut short before the minimum and
         maximum, which writable settings need.
         """
+        # Settings without any info are not supported by the device.
         missing = [
             setting
             for setting in settings
-            if (info := self.setting_info.get(setting)) is None
-            or info.minimum is None
-            or info.maximum is None
+            if (info := self.setting_info.get(setting)) is not None
+            and (info.minimum is None or info.maximum is None)
         ]
         if not missing:
             return
@@ -737,6 +769,132 @@ class VeBusClient:
         return info
 
     # ------------------------------------------------------------------
+    # Multi-unit systems
+
+    @contextlib.asynccontextmanager
+    async def _at_address(self, address: int) -> AsyncIterator[None]:
+        """Talk to another unit for the duration of the block (lock held).
+
+        The home address is selected again afterwards.
+        """
+        async with self._lock:
+            await self._prepare()
+            if address == self.address:
+                yield
+                return
+            try:
+                await self._request(
+                    encode_frame(CMD_ADDRESS, [A_ACTION_SET, address]),
+                    _mk_reply(CMD_ADDRESS),
+                )
+                yield
+            finally:
+                try:
+                    await self._request(
+                        encode_frame(CMD_ADDRESS, [A_ACTION_SET, self.address]),
+                        _mk_reply(CMD_ADDRESS),
+                    )
+                except VeBusError:
+                    self._readdress = True
+
+    async def _read_firmware_locked(self) -> FirmwareVersion | None:
+        low = await self._winmon_locked(WinmonCommand.SEND_SOFTWARE_VERSION_PART0, 0, 0)
+        high = await self._winmon_locked(
+            WinmonCommand.SEND_SOFTWARE_VERSION_PART1, 0, 0
+        )
+        if (
+            len(low) < 3
+            or len(high) < 3
+            or low[0] != WinmonReply.SOFTWARE_VERSION_PART0
+            or high[0] != WinmonReply.SOFTWARE_VERSION_PART1
+        ):
+            return None
+        return FirmwareVersion(
+            int.from_bytes(low[1:3], "little")
+            | int.from_bytes(high[1:3], "little") << 16
+        )
+
+    async def scan_units(self) -> tuple[int, ...]:
+        """Find all units on the VE.Bus (section 7.2).
+
+        Every address is asked for its firmware version; the scan stops after
+        three addresses in a row do not answer.
+        """
+        found = [self.address]
+        self.unit_firmware = {self.address: self.firmware}
+        misses = 0
+        for address in range(MAX_ADDRESS + 1):
+            if address == self.address:
+                continue
+            try:
+                async with self._at_address(address):
+                    firmware = await self._read_firmware_locked()
+            except VeBusTimeoutError:
+                misses += 1
+                if misses >= SCAN_MISSES:
+                    break
+                continue
+            except VeBusNotSupportedError:
+                firmware = None
+            misses = 0
+            found.append(address)
+            self.unit_firmware[address] = firmware
+        return tuple(sorted(found))
+
+    async def read_unit(self, address: int) -> UnitState:
+        """Read the values of one unit of a multi-unit system."""
+        unit = UnitState(address, firmware=self.unit_firmware.get(address))
+        async with self._at_address(address):
+            for group in UNIT_RAM_VARS:
+                unit.ram.update(await self._read_ram_vars_locked(group))
+            try:
+                unit.device_state = decode_device_state(
+                    await self._winmon_locked(WinmonCommand.GET_SET_DEVICE_STATE, 0, 0)
+                )
+            except VeBusNotSupportedError, DecodeError:
+                unit.device_state = None
+        return unit
+
+    # ------------------------------------------------------------------
+    # Devices without info frames
+
+    async def read_info_from_ram(self) -> tuple[DcInfo, AcInfo]:
+        """Build the DC and AC info from RAM variables.
+
+        Used for devices that do not answer the 'F' info frames, such as the
+        Phoenix/Compact inverters (j9brown/victron-mk3-hass issue #11).
+        """
+        values: dict[int, float | None] = {}
+        for group in INFO_RAM_VARS:
+            values.update(await self.read_ram_vars(group))
+
+        def required(var: RamVar) -> float:
+            value = values.get(var)
+            if value is None:
+                raise DecodeError(f"RAM variable {var.name} not available")
+            return value
+
+        battery_current = values.get(RamVar.I_BAT) or 0.0
+        dc = DcInfo(
+            voltage=required(RamVar.U_BAT),
+            inverter_current=max(-battery_current, 0.0),
+            charger_current=max(battery_current, 0.0),
+            inverter_frequency=_frequency(values.get(RamVar.INVERTER_PERIOD)),
+        )
+        ac = AcInfo(
+            phase=1,
+            phase_count=1,
+            mains_voltage=values.get(RamVar.U_MAINS_RMS) or 0.0,
+            mains_current=values.get(RamVar.I_MAINS_RMS) or 0.0,
+            inverter_voltage=required(RamVar.U_INVERTER_RMS),
+            inverter_current=values.get(RamVar.I_INVERTER_RMS) or 0.0,
+            mains_frequency=_frequency(values.get(RamVar.MAINS_PERIOD)),
+            device_state=None,
+            raw_device_state=0xFF,
+        )
+        return dc, ac
+
+    # ------------------------------------------------------------------
     # High level operations
 
     async def initialize(self) -> DeviceIdentity:
@@ -772,24 +930,41 @@ class VeBusClient:
         except VeBusTimeoutError, VeBusNotSupportedError:
             _LOGGER.debug("Device did not report its firmware version")
 
-        await _retry(self.read_dc_info)
-        phases = [1]
-        await _retry(lambda: self.read_ac_info(1))
-        for phase in (2, 3, 4):
-            try:
-                await self.read_ac_info(phase)
-            except VeBusTimeoutError:
-                break
-            phases.append(phase)
-        self.phases = tuple(phases)
+        try:
+            await _retry(self.read_dc_info)
+        except VeBusTimeoutError:
+            # Some devices only answer Winmon commands; use RAM variables.
+            await self.read_info_from_ram()
+            _LOGGER.info("Device does not send info frames, reading RAM variables")
+            self.info_frames = False
+            self.phases = (1,)
+        else:
+            self.info_frames = True
+            phases = [1]
+            await _retry(lambda: self.read_ac_info(1))
+            for phase in (2, 3, 4):
+                try:
+                    await self.read_ac_info(phase)
+                except VeBusTimeoutError:
+                    break
+                phases.append(phase)
+            self.phases = tuple(phases)
+
+        self.units = await self.scan_units()
+        self._unit_queue.clear()
+        if len(self.units) > 1:
+            _LOGGER.info("Found VE.Bus units at addresses %s", self.units)
 
         # Read everything once so the state is complete from the start.
         self._slow_queue.clear()
         self.state = VeBusState(
-            mk3_version=self.mk3_version, firmware=self.firmware, phases=self.phases
+            mk3_version=self.mk3_version,
+            firmware=self.firmware,
+            phases=self.phases,
+            info_frames=self.info_frames,
         )
         await self.poll(full=True)
-        return DeviceIdentity(self.mk3_version, self.firmware, self.phases)
+        return DeviceIdentity(self.mk3_version, self.firmware, self.phases, self.units)
 
     def _refill_slow_queue(self) -> None:
         for group in SLOW_RAM_VARS:
@@ -815,12 +990,17 @@ class VeBusClient:
             ram=dict(self.state.ram),
             settings=dict(self.state.settings),
             settings_raw=dict(self.state.settings_raw),
+            units=dict(self.state.units),
             mk3_version=self.mk3_version,
             firmware=self.firmware,
             phases=self.phases,
+            info_frames=self.info_frames,
         )
 
-        state.dc = await self.read_dc_info()
+        if self.info_frames:
+            state.dc = await self.read_dc_info()
+        else:
+            state.dc, state.ac[1] = await self.read_info_from_ram()
 
         if interface_flags is not None and self.interface_flags_supported:
             try:
@@ -835,8 +1015,9 @@ class VeBusClient:
                         "Interface does not support the 'H' command (not an MK3?)"
                     )
                     self.interface_flags_supported = False
-        for phase in self.phases:
-            state.ac[phase] = await self.read_ac_info(phase)
+        if self.info_frames:
+            for phase in self.phases:
+                state.ac[phase] = await self.read_ac_info(phase)
 
         optional_reads: list[tuple[str, Callable[[], Awaitable[object]]]] = [
             ("leds", self.read_led),
@@ -876,6 +1057,22 @@ class VeBusClient:
                     state.settings[ids[0]] = await self.read_setting(ids[0])
             except (VeBusTimeoutError, VeBusNotSupportedError) as err:
                 _LOGGER.debug("Reading %s %s failed: %s", kind, ids, err)
+
+        if len(self.units) > 1:
+            if full:
+                addresses = list(self.units)
+            else:
+                if not self._unit_queue:
+                    self._unit_queue.extend(self.units)
+                addresses = [self._unit_queue.popleft()]
+            for address in addresses:
+                try:
+                    state.units[address] = await self.read_unit(address)
+                except (VeBusTimeoutError, VeBusNotSupportedError, DecodeError) as err:
+                    _LOGGER.debug("Reading unit %s failed: %s", address, err)
+                    state.units[address] = UnitState(
+                        address, firmware=self.unit_firmware.get(address)
+                    )
 
         state.timestamp = time.monotonic()
         self.state = state
@@ -968,3 +1165,10 @@ def _setting_value(reply: bytes) -> int | None:
     if len(reply) < 3 or reply[0] != WinmonReply.READ_SETTING_OK:
         return None
     return int.from_bytes(reply[1:3], "little")
+
+
+def _frequency(period: float | None) -> float | None:
+    """Convert a decoded period RAM variable (in units of 0.1 s) to Hz."""
+    if not period or period <= 0:
+        return None
+    return round(10.0 / period, 2)

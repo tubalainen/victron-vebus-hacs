@@ -20,28 +20,62 @@ def device_identifier(coordinator: VeBusCoordinator) -> str:
     return f"{entry.unique_id or entry.entry_id}_{coordinator.client.address}"
 
 
+def system_device_info(coordinator: VeBusCoordinator) -> DeviceInfo:
+    """Return the device info of the VE.Bus system (the unit at the home address)."""
+    firmware = coordinator.identity.firmware
+    return DeviceInfo(
+        identifiers={(DOMAIN, device_identifier(coordinator))},
+        manufacturer=MANUFACTURER,
+        model="VE.Bus inverter/charger",
+        model_id=firmware.product_id if firmware else None,
+        name=coordinator.config_entry.title,
+        sw_version=str(firmware.version) if firmware else None,
+    )
+
+
+def unit_identifier(coordinator: VeBusCoordinator, address: int) -> str:
+    """Return the identifier of one unit of a multi-unit system."""
+    entry = coordinator.config_entry
+    return f"{entry.unique_id or entry.entry_id}_unit{address}"
+
+
+def unit_device_info(coordinator: VeBusCoordinator, address: int) -> DeviceInfo:
+    """Return the device info of one unit, linked to the system device."""
+    firmware = coordinator.client.unit_firmware.get(address)
+    info = DeviceInfo(
+        identifiers={(DOMAIN, unit_identifier(coordinator, address))},
+        manufacturer=MANUFACTURER,
+        model="VE.Bus inverter/charger",
+        model_id=firmware.product_id if firmware else None,
+        name=f"{coordinator.config_entry.title} unit {address}",
+        sw_version=str(firmware.version) if firmware else None,
+    )
+    if coordinator.system_device_id is not None:
+        info["via_device_id"] = coordinator.system_device_id
+    return info
+
+
 class VeBusEntity(CoordinatorEntity[VeBusCoordinator]):
-    """An entity belonging to a VE.Bus device."""
+    """An entity belonging to the VE.Bus system or to one of its units."""
 
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator: VeBusCoordinator, description: EntityDescription
+        self,
+        coordinator: VeBusCoordinator,
+        description: EntityDescription,
+        unit: int | None = None,
     ) -> None:
         """Initialize the entity."""
         super().__init__(coordinator)
         self.entity_description = description
-        identifier = device_identifier(coordinator)
+        if unit is None:
+            identifier = device_identifier(coordinator)
+            self._attr_device_info = system_device_info(coordinator)
+        else:
+            identifier = unit_identifier(coordinator, unit)
+            self._attr_device_info = unit_device_info(coordinator, unit)
         self._attr_unique_id = f"{identifier}_{description.key}"
-        firmware = coordinator.identity.firmware
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, identifier)},
-            manufacturer=MANUFACTURER,
-            model="VE.Bus inverter/charger",
-            model_id=firmware.product_id if firmware else None,
-            name=coordinator.config_entry.title,
-            sw_version=str(firmware.version) if firmware else None,
-        )
 
     async def async_device_call[T](self, call: Awaitable[T]) -> T:
         """Run a command on the device and publish the resulting state.
