@@ -86,10 +86,12 @@
       "settings": {
         "data": {
           "scan_interval": "Polling interval",
+          "alarm_issues": "Show alarms as repair issues",
           "enable_battery_limits": "Enable battery operational limits (BMS)"
         },
         "data_description": {
           "scan_interval": "Seconds between polls. At 2400 baud one poll takes about a second.",
+          "alarm_issues": "Raise a repair issue while the Multi reports an overload, low battery or temperature alarm. Warnings (pre-alarms) and alarms are always available as events of the Alarm entity.",
           "enable_battery_limits": "Advanced, lithium batteries only. Creates four numbers whose limits are sent to the Multi on every poll, like a battery management system. WARNING: once the Multi has received limits, it stops charging AND inverting if it gets none for 5 minutes, and keeps expecting them until it is restarted. Needs device firmware 415 or later."
         },
         "title": "Integration settings",
@@ -358,6 +360,41 @@
       },
       "ess_active_setpoint_phase": {
         "name": "ESS active setpoint {phase}"
+      },
+      "ac_input_energy_imported": {
+        "name": "AC input energy imported"
+      },
+      "ac_input_energy_exported": {
+        "name": "AC input energy exported"
+      },
+      "ac_output_energy": {
+        "name": "AC output energy"
+      },
+      "battery_energy_charged": {
+        "name": "Battery energy charged"
+      },
+      "battery_energy_discharged": {
+        "name": "Battery energy discharged"
+      },
+      "inverter_output_voltage": {
+        "name": "Inverter output voltage"
+      },
+      "low_battery_shutdown_voltage": {
+        "name": "Low battery shutdown voltage"
+      },
+      "low_battery_restart_voltage": {
+        "name": "Low battery restart voltage"
+      },
+      "charge_characteristic": {
+        "name": "Charge characteristic",
+        "state": {
+          "variable": "Variable (adaptive)",
+          "fixed": "Fixed",
+          "fixed_storage": "Fixed with storage"
+        }
+      },
+      "maximum_absorption_time": {
+        "name": "Maximum absorption time"
       }
     },
     "binary_sensor": {
@@ -445,6 +482,9 @@
       },
       "ups_function": {
         "name": "UPS function"
+      },
+      "virtual_switch": {
+        "name": "Virtual switch"
       }
     },
     "switch": {
@@ -506,6 +546,42 @@
       "force_float": {
         "name": "Force float"
       }
+    },
+    "event": {
+      "alarm": {
+        "name": "Alarm",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "overload_warning": "Overload warning",
+              "overload_alarm": "Overload alarm",
+              "overload_cleared": "Overload cleared",
+              "low_battery_warning": "Low battery warning",
+              "low_battery_alarm": "Low battery alarm",
+              "low_battery_cleared": "Low battery cleared",
+              "temperature_warning": "Temperature warning",
+              "temperature_alarm": "Temperature alarm",
+              "temperature_cleared": "Temperature cleared"
+            }
+          },
+          "alarm": {
+            "name": "Alarm",
+            "state": {
+              "overload": "Overload",
+              "low_battery": "Low battery",
+              "temperature": "Temperature"
+            }
+          },
+          "level": {
+            "name": "Level",
+            "state": {
+              "ok": "OK",
+              "warning": "Warning",
+              "alarm": "Alarm"
+            }
+          }
+        }
+      }
     }
   },
   "exceptions": {
@@ -535,6 +611,18 @@
     "device_unreachable": {
       "title": "VE.Bus device unreachable",
       "description": "The VE.Bus device on {device} has not responded for more than 5 minutes ({error}).\n\nIf the device was switched off it may have gone to sleep, which also cuts the power of the MK3 interface. Switch it on at the device, and keep the \"Keep awake\" switch on to prevent this. Also check the cable between the MK3 and the device."
+    },
+    "overload_alarm": {
+      "title": "{name}: overload alarm",
+      "description": "The Multi reports an **overload alarm**: the loads on its AC outputs draw more power than it can supply.\n\nReduce the load. A Multi that stays overloaded switches off and tries to restart, so **AC out 1 and AC out 2 can lose power**.\n\nThis message disappears by itself when the alarm clears. To stop these messages, turn off *Show alarms as repair issues* in the integration settings."
+    },
+    "low_battery_alarm": {
+      "title": "{name}: low battery alarm",
+      "description": "The Multi reports a **low battery alarm**: the battery voltage has fallen below the shutdown voltage, so the inverter switches off. **The AC outputs lose power** unless the AC input is connected.\n\nThe inverter starts again when the battery has been charged above the restart voltage. Check the battery, its state of charge and the charge sources.\n\nThis message disappears by itself when the alarm clears. To stop these messages, turn off *Show alarms as repair issues* in the integration settings."
+    },
+    "temperature_alarm": {
+      "title": "{name}: high temperature alarm",
+      "description": "The Multi reports a **high temperature alarm** and switches off to protect itself, so **AC out 1 and AC out 2 can lose power**.\n\nCheck the ventilation around the Multi, its fans and the ambient temperature, and reduce the load or charge current. (With a battery temperature sensor this alarm can also mean that the battery is too hot or too cold.)\n\nThis message disappears by itself when the alarm clears. To stop these messages, turn off *Show alarms as repair issues* in the integration settings."
     }
   },
   "services": {

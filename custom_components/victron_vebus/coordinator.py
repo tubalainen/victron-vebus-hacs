@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 import time
@@ -13,6 +14,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CONF_ALARM_ISSUES,
     CONF_ENABLE_BATTERY_LIMITS,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
@@ -21,8 +23,10 @@ from .const import (
     UNAVAILABLE_ISSUE_DELAY,
 )
 from .vebus import (
+    AlarmState,
     DeviceIdentity,
     InterfaceFlag,
+    Led,
     Setting,
     SettingFlag,
     VeBusClient,
@@ -36,6 +40,16 @@ from .vebus.const import (
 from .vebus.models import BatteryLimits
 
 _LOGGER = logging.getLogger(__name__)
+
+# Alarms reported by the alarm LEDs: blinking is a pre-alarm (warning), on
+# is an alarm.
+ALARM_LEDS: dict[str, Led] = {
+    "overload": Led.OVERLOAD,
+    "low_battery": Led.LOW_BATTERY,
+    "temperature": Led.TEMPERATURE,
+}
+
+type AlarmListener = Callable[[str, AlarmState], None]
 
 
 @dataclass
@@ -88,6 +102,9 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         self.battery_limits: BatteryLimits | None = None
         self._battery_limits_timeout_logged = False
         self._unavailable_since: float | None = None
+        # Last known level of each alarm, and who wants to hear of changes.
+        self.alarms: dict[str, AlarmState] = {}
+        self._alarm_listeners: list[AlarmListener] = []
         self.data = client.state
 
     async def _async_update_data(self) -> VeBusState:
@@ -213,6 +230,65 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         if self.battery_limits_enabled:
             await self.client.send_battery_limits(limits)
 
+    @callback
+    def async_add_alarm_listener(self, listener: AlarmListener) -> Callable[[], None]:
+        """Call ``listener(alarm, level)`` whenever an alarm changes level."""
+        self._alarm_listeners.append(listener)
+
+        @callback
+        def remove() -> None:
+            self._alarm_listeners.remove(listener)
+
+        return remove
+
+    @callback
+    def _async_check_alarms(self, state: VeBusState) -> None:
+        if state.leds is None:
+            return
+        for alarm, led in ALARM_LEDS.items():
+            level = state.leds.alarm(led)
+            previous = self.alarms.get(alarm)
+            if level is previous:
+                continue
+            self.alarms[alarm] = level
+            self._async_update_alarm_issue(alarm, level)
+            if previous is None and level is AlarmState.OK:
+                # Nothing to report when the first reading is fine.
+                continue
+            if level is AlarmState.OK:
+                _LOGGER.info("VE.Bus %s alarm cleared", alarm)
+            else:
+                _LOGGER.warning("VE.Bus %s %s", alarm, level.value)
+            for listener in list(self._alarm_listeners):
+                listener(alarm, level)
+
+    @callback
+    def _async_update_alarm_issue(self, alarm: str, level: AlarmState) -> None:
+        issue_id = self._alarm_issue_id(alarm)
+        if level is AlarmState.ALARM and self.config_entry.options.get(
+            CONF_ALARM_ISSUES, True
+        ):
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key=f"{alarm}_alarm",
+                translation_placeholders={"name": self.config_entry.title},
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    def _alarm_issue_id(self, alarm: str) -> str:
+        return f"{alarm}_alarm_{self.config_entry.entry_id}"
+
+    @callback
+    def async_clear_alarm_issues(self) -> None:
+        """Remove the alarm issues, e.g. when the entry is unloaded."""
+        for alarm in ALARM_LEDS:
+            ir.async_delete_issue(self.hass, DOMAIN, self._alarm_issue_id(alarm))
+
     async def async_release(self) -> None:
         """Hand ESS control back to the device before unloading."""
         if not self.ess_control or not self.client.connected:
@@ -240,6 +316,7 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
             _LOGGER.info("VE.Bus device on %s is available again", self.client.url)
             self._unavailable_since = None
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
+        self._async_check_alarms(state)
         self.async_set_updated_data(state)
 
     @callback

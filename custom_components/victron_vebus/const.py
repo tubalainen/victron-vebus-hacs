@@ -18,6 +18,8 @@ CONF_ACKNOWLEDGE: Final = "acknowledge"
 # if they are not refreshed within 5 minutes, until it is restarted.
 CONF_ENABLE_BATTERY_LIMITS: Final = "enable_battery_limits"
 CONF_SCAN_INTERVAL: Final = "scan_interval"
+# Show active alarms (overload, low battery, temperature) as repair issues.
+CONF_ALARM_ISSUES: Final = "alarm_issues"
 
 DEFAULT_SCAN_INTERVAL: Final = 2
 MIN_SCAN_INTERVAL: Final = 1
@@ -33,6 +35,9 @@ ESS_SETPOINT_LIMIT: Final = 30000
 
 # Raise a repair issue when the device has been unreachable for this long.
 UNAVAILABLE_ISSUE_DELAY: Final = 300
+# Power samples further apart than this (or 5 polling intervals, if longer)
+# are not integrated into the energy sensors.
+ENERGY_MIN_GAP: Final = 60
 
 # Time allowed for probing the interface and initialising the device.
 PROBE_TIMEOUT: Final = 15

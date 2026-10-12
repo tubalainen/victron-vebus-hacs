@@ -113,7 +113,11 @@ FAST_RAM_VARS: tuple[RamVar, ...] = (
 SLOW_RAM_VARS: tuple[tuple[RamVar, ...], ...] = (
     (RamVar.U_BAT_RMS,),
     (RamVar.CHARGE_STATE,),
-    (RamVar.IGNORE_AC_INPUT_STATE, RamVar.MULTI_FUNCTIONAL_RELAY_STATE),
+    (
+        RamVar.VIRTUAL_SWITCH_POSITION,
+        RamVar.IGNORE_AC_INPUT_STATE,
+        RamVar.MULTI_FUNCTIONAL_RELAY_STATE,
+    ),
 )
 SLOW_SETTINGS: tuple[Setting, ...] = (
     Setting.U_BAT_ABSORPTION,
@@ -123,6 +127,11 @@ SLOW_SETTINGS: tuple[Setting, ...] = (
     Setting.I_MAINS_LIMIT_AC2,
     Setting.BATTERY_CAPACITY,
     Setting.SOLAR_WIND_PRIORITY_VOLTAGE,
+    Setting.U_INV_SETPOINT,
+    Setting.ABSORPTION_DURATION,
+    Setting.CHARGE_CHARACTERISTIC,
+    Setting.U_BAT_LOW_LIMIT,
+    Setting.U_BAT_LOW_HYSTERESIS,
 )
 # Flag settings, kept as raw values.
 SLOW_RAW_SETTINGS: tuple[Setting, ...] = (Setting.FLAGS_0, Setting.FLAGS_2)

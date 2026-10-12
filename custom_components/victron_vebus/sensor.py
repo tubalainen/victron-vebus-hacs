@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from decimal import Decimal
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
@@ -17,14 +19,18 @@ from homeassistant.const import (
     UnitOfApparentPower,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
+    UnitOfEnergy,
     UnitOfFrequency,
     UnitOfPower,
+    UnitOfTime,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
+from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, ENERGY_MIN_GAP
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
+from .energy import EnergyCounter
 from .entity import VeBusEntity
 from .vebus import AlarmState, ChargeState, DeviceState, Led, Mode, RamVar, Setting
 from .vebus.models import AcInfo, UnitState, VeBusState
@@ -33,6 +39,8 @@ PARALLEL_UPDATES = 0
 
 NOT_CHARGING = "not_charging"
 AC_INPUTS = ("ac_in_1", "ac_in_2", "ac_in_3", "ac_in_4")
+# Values of setting 10 (charge characteristic), as named by VEConfigure.
+CHARGE_CHARACTERISTICS = ("variable", "fixed", "fixed_storage")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -122,6 +130,25 @@ def _active_input(state: VeBusState) -> StateType:
     if state.config is None:
         return None
     return AC_INPUTS[state.config.last_active_ac_input]
+
+
+def _charge_characteristic(state: VeBusState) -> StateType:
+    value = state.setting_value(Setting.CHARGE_CHARACTERISTIC)
+    if value is None:
+        return None
+    index = int(value)
+    if not 0 <= index < len(CHARGE_CHARACTERISTICS):
+        return None
+    return CHARGE_CHARACTERISTICS[index]
+
+
+def _low_battery_restart_voltage(state: VeBusState) -> StateType:
+    # The inverter restarts at the shutdown voltage plus the hysteresis.
+    limit = state.setting_value(Setting.U_BAT_LOW_LIMIT)
+    hysteresis = state.setting_value(Setting.U_BAT_LOW_HYSTERESIS)
+    if limit is None or hysteresis is None:
+        return None
+    return round(limit + hysteresis, 2)
 
 
 def _total(var: RamVar, sign: float = 1.0) -> Callable[[VeBusState], StateType]:
@@ -395,6 +422,58 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         exists_fn=_has_setting(Setting.BATTERY_CAPACITY),
     ),
     VeBusSensorEntityDescription(
+        key="inverter_output_voltage",
+        translation_key="inverter_output_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_setting(Setting.U_INV_SETPOINT),
+        exists_fn=_has_setting(Setting.U_INV_SETPOINT),
+    ),
+    VeBusSensorEntityDescription(
+        key="low_battery_shutdown_voltage",
+        translation_key="low_battery_shutdown_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        suggested_display_precision=2,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_setting(Setting.U_BAT_LOW_LIMIT),
+        exists_fn=_has_setting(Setting.U_BAT_LOW_LIMIT),
+    ),
+    VeBusSensorEntityDescription(
+        key="low_battery_restart_voltage",
+        translation_key="low_battery_restart_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        suggested_display_precision=2,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_low_battery_restart_voltage,
+        exists_fn=lambda c: (
+            _has_setting(Setting.U_BAT_LOW_LIMIT)(c)
+            and _has_setting(Setting.U_BAT_LOW_HYSTERESIS)(c)
+        ),
+    ),
+    VeBusSensorEntityDescription(
+        key="charge_characteristic",
+        translation_key="charge_characteristic",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(CHARGE_CHARACTERISTICS),
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_charge_characteristic,
+        exists_fn=_has_setting(Setting.CHARGE_CHARACTERISTIC),
+    ),
+    VeBusSensorEntityDescription(
+        key="maximum_absorption_time",
+        translation_key="maximum_absorption_time",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_setting(Setting.ABSORPTION_DURATION),
+        exists_fn=_has_setting(Setting.ABSORPTION_DURATION),
+    ),
+    VeBusSensorEntityDescription(
         key="firmware_version",
         translation_key="firmware_version",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -406,6 +485,51 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda s: str(s.mk3_version) if s.mk3_version else None,
     ),
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class VeBusEnergySensorEntityDescription(SensorEntityDescription):
+    """Describes an energy counter integrated from a power reading."""
+
+    power_fn: Callable[[VeBusState], float | None]
+    # +1 counts positive power, -1 counts negative power.
+    direction: int
+
+
+def _power(var: RamVar, sign: float = 1.0) -> Callable[[VeBusState], float | None]:
+    """Return a power RAM variable summed over all units."""
+
+    def value(state: VeBusState) -> float | None:
+        total = state.total_ram_value(var)
+        return None if total is None else sign * total
+
+    return value
+
+
+def _energy(
+    key: str, power_fn: Callable[[VeBusState], float | None], direction: int
+) -> VeBusEnergySensorEntityDescription:
+    return VeBusEnergySensorEntityDescription(
+        key=key,
+        translation_key=key,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=2,
+        power_fn=power_fn,
+        direction=direction,
+    )
+
+
+# AC input power is positive while taking power from the grid; battery
+# (DC side) power is positive while charging.
+ENERGY_SENSORS: tuple[VeBusEnergySensorEntityDescription, ...] = (
+    _energy("ac_input_energy_imported", _power(RamVar.INVERTER_POWER_2, -1), 1),
+    _energy("ac_input_energy_exported", _power(RamVar.INVERTER_POWER_2, -1), -1),
+    _energy("ac_output_energy", _power(RamVar.OUTPUT_POWER), 1),
+    _energy("battery_energy_charged", _power(RamVar.INVERTER_POWER_1), 1),
+    _energy("battery_energy_discharged", _power(RamVar.INVERTER_POWER_1), -1),
 )
 
 
@@ -605,6 +729,9 @@ async def async_setup_entry(
         for description in DEVICE_SENSORS
         if description.exists_fn(coordinator)
     ]
+    entities.extend(
+        VeBusEnergySensor(coordinator, description) for description in ENERGY_SENSORS
+    )
     phases = coordinator.identity.phases
     multi_phase = len(phases) > 1
     phase_descriptions = (
@@ -730,3 +857,51 @@ class VeBusEssSetpointSensor(VeBusEntity, SensorEntity):
             return None
         # MK3 sign: negative = import; Home Assistant/GX sign is the inverse.
         return -ess.setpoint
+
+
+class VeBusEnergySensor(VeBusEntity, RestoreSensor):
+    """Energy in kWh, integrated from a power reading and kept across restarts."""
+
+    entity_description: VeBusEnergySensorEntityDescription
+
+    def __init__(
+        self,
+        coordinator: VeBusCoordinator,
+        description: VeBusEnergySensorEntityDescription,
+    ) -> None:
+        """Initialize the counter."""
+        super().__init__(coordinator, description)
+        interval = float(
+            coordinator.config_entry.options.get(
+                CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+            )
+        )
+        self._counter = EnergyCounter(
+            description.direction, max_gap=max(5 * interval, ENERGY_MIN_GAP)
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the total and take the first sample."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and isinstance(last.native_value, (int, float, Decimal)):
+            self._counter.total = float(last.native_value)
+        self._add_sample()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._add_sample()
+        super()._handle_coordinator_update()
+
+    def _add_sample(self) -> None:
+        if not self.coordinator.last_update_success:
+            # Nothing is counted for the time the device is unreachable.
+            self._counter.reset()
+            return
+        state = self.coordinator.data
+        self._counter.add(state.timestamp, self.entity_description.power_fn(state))
+
+    @property
+    def native_value(self) -> float:
+        """Return the energy in kWh."""
+        return round(self._counter.total, 4)

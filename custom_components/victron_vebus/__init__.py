@@ -30,7 +30,12 @@ _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.EVENT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 CONTROL_PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.NUMBER]
 # Entities of earlier versions whose changes are now only offered in the guided
 # "Device actions" dialog, which shows their risks first (v0.5).
@@ -121,7 +126,9 @@ def _async_remove_old_entities(
 
 async def async_unload_entry(hass: HomeAssistant, entry: VeBusConfigEntry) -> bool:
     """Unload a config entry."""
-    await entry.runtime_data.coordinator.async_release()
+    coordinator = entry.runtime_data.coordinator
+    await coordinator.async_release()
+    coordinator.async_clear_alarm_issues()
     return await hass.config_entries.async_unload_platforms(
         entry, entry.runtime_data.platforms
     )
