@@ -9,9 +9,10 @@ It is a ground-up rewrite inspired by
 project's known bugs and adds new features. See [docs/ANALYSIS.md](docs/ANALYSIS.md) for
 the analysis and the roadmap.
 
-> **Status:** v0.1, monitoring first. It is developed and tested against a single
-> MultiPlus-II using a protocol simulator, and has not yet been verified on real
-> hardware. Multi-unit systems (parallel or three-phase) are partially supported: phases
+> **Status:** v0.2 beta. It is developed and tested against a single MultiPlus-II
+> using a protocol simulator, and has not yet been verified on real hardware. The
+> setting controls added in v0.2 in particular are a beta: try them on your device with
+> the command line tool first (see below). Multi-unit systems (parallel or three-phase) are partially supported: phases
 > are detected, but every value comes from the L1 master. Please report your results.
 
 ## Features
@@ -50,6 +51,11 @@ the analysis and the roadmap.
   - mode select (on / off / charger only / inverter only)
   - AC input current limit
   - the `victron_vebus.set_remote_panel_state` action
+  - buttons to force absorption, float or equalise
+  - charger settings: absorption and float voltage, charge current, configured AC input
+    current limit
+  - PowerAssist, weak AC input, UPS function and solar & wind priority switches, plus
+    the solar & wind priority voltage. Settings are changed in RAM only.
 
 ## Requirements
 
@@ -100,7 +106,12 @@ settings.
 | Firmware version, MK3 interface version | Diagnostic. |
 | LED binary sensors (8) | *(disabled)*, with a `blinking` attribute. |
 | Keep awake (switch) | See below. |
+| Solar & wind priority voltage | Diagnostic. Only on firmware 506+ with the feature configured. |
 | Remote mode (select), Remote AC input current limit (number) | Only with *Enable control entities*. |
+| Force absorption / float / equalise (buttons) | Only with *Enable control entities*; firmware 400+. |
+| Absorption voltage, Float voltage, Charge current limit, Configured AC input current limit (numbers) | Only with *Enable control entities*; firmware 412+. RAM only, see below. |
+| PowerAssist, Weak AC input, UPS function (switches) | Only with *Enable control entities*; firmware 412+. RAM only. |
+| Solar & wind priority (switch), Solar & wind priority voltage (number) | Only with *Enable control entities*; firmware 506+ and the feature configured. RAM only. |
 
 ### Keep awake
 
@@ -136,6 +147,43 @@ device restarts.
 > Do not use the controls if a GX device or another remote panel also controls the
 > Multi. They would fight over the remote switch state.
 
+### Changing settings (beta)
+
+The setting numbers and switches change the device's settings **in RAM only**, never
+its stored (EEPROM) configuration. A change applies immediately and is lost when the
+device restarts, which then goes back to the configuration made with VictronConnect
+or VEConfigure. Because nothing is written to the EEPROM, automations can change these
+settings as often as needed without wearing it out.
+
+How a change is made:
+
+- RAM-only writes need the MK3 in "long frame" mode. The integration switches the
+  interface to long frames for the write and straight back to short frames afterwards.
+  This is the same sequence VEConfigure uses, and polling pauses for that moment.
+- Every write is read back. If the device reports a different value, the action fails
+  with an error.
+- Values are limited to the range the device reports for each setting. The float
+  voltage can't be set above the absorption voltage, nor the absorption voltage below
+  the float voltage. The solar & wind priority voltage can't be set above the
+  absorption voltage.
+- A switch changes only its own bit of the device's flag settings, and only bits the
+  device reports as supported.
+
+What the switches do:
+
+- **Solar & wind priority off** makes the device charge the battery to the full
+  absorption voltage again ("charge to 100%"). Switch it back on afterwards, or restart
+  the device.
+- **UPS function off** sets the "disable wave check" flag, so the device is more
+  tolerant of a poor AC input (for example a generator) but switches over more slowly.
+
+Requirements:
+
+- Device firmware 412 or newer for setting changes, 400 for forcing a charge state,
+  and 506 for solar & wind priority.
+- The firmware version is shown in the *Firmware version* sensor. Entities whose
+  feature the firmware doesn't support are not created.
+
 ## Testing on the hardware without Home Assistant
 
 `tools/vebus_cli.py` uses the same protocol code without Home Assistant. Stop Home
@@ -146,6 +194,11 @@ pip install serialx
 python tools/vebus_cli.py info    /dev/serial/by-id/usb-VictronEnergy_MK3-USB_Interface_XXXX-if00-port0
 python tools/vebus_cli.py monitor /dev/serial/by-id/... --interval 2
 python tools/vebus_cli.py sniff   /dev/serial/by-id/...      # print raw frames
+
+# v0.2 controls (RAM only, lost when the device restarts):
+python tools/vebus_cli.py set-setting /dev/serial/by-id/... 3 27.0 --yes   # float voltage
+python tools/vebus_cli.py set-flag    /dev/serial/by-id/... weak-ac on --yes
+python tools/vebus_cli.py force       /dev/serial/by-id/... absorption --yes
 ```
 
 Please include the `info` output when reporting issues for devices other than the

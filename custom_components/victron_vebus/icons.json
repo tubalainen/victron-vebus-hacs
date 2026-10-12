@@ -47,6 +47,9 @@
       },
       "interface_version": {
         "default": "mdi:usb-port"
+      },
+      "solar_wind_priority_voltage": {
+        "default": "mdi:solar-power-variant"
       }
     },
     "binary_sensor": {
@@ -120,6 +123,18 @@
         "state": {
           "on": "mdi:sleep-off"
         }
+      },
+      "power_assist": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "weak_ac_input": {
+        "default": "mdi:sine-wave"
+      },
+      "ups_function": {
+        "default": "mdi:power-plug-battery"
+      },
+      "solar_wind_priority": {
+        "default": "mdi:solar-power-variant"
       }
     },
     "select": {
@@ -130,6 +145,32 @@
     "number": {
       "remote_current_limit": {
         "default": "mdi:current-ac"
+      },
+      "absorption_voltage": {
+        "default": "mdi:battery-arrow-up"
+      },
+      "float_voltage": {
+        "default": "mdi:battery-sync"
+      },
+      "charge_current_limit": {
+        "default": "mdi:battery-charging-high"
+      },
+      "configured_ac_input_current_limit": {
+        "default": "mdi:transmission-tower-import"
+      },
+      "solar_wind_priority_voltage": {
+        "default": "mdi:solar-power-variant"
+      }
+    },
+    "button": {
+      "force_absorption": {
+        "default": "mdi:battery-arrow-up"
+      },
+      "force_float": {
+        "default": "mdi:battery-sync"
+      },
+      "force_equalise": {
+        "default": "mdi:battery-heart-variant"
       }
     }
   },

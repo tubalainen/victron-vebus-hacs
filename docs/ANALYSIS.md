@@ -75,8 +75,8 @@ was used where it agrees with the specification.
 
 | Version | Scope |
 |---|---|
-| **0.1** (this release) | Monitoring of a single VE.Bus device. Opt-in mode and current-limit controls. Keep awake. Reconnect. Diagnostics. Protocol simulator and tests. |
-| 0.2 | Buttons to force absorption, float or equalise (`0x0E` 1/2/3, firmware ≥ 400). PowerAssist and passthru handling. Writing settings RAM-only via `0x37` flags 0x03, with read-back and the bit masks reported by `0x35`. Solar and wind priority (settings 60 and 88, j9brown issue #14 and PR #15). |
+| **0.1** | Monitoring of a single VE.Bus device. Opt-in mode and current-limit controls. Keep awake. Reconnect. Diagnostics. Protocol simulator and tests. |
+| **0.2** (beta) | Buttons to force absorption, float or equalise (`0x0E` 1/2/3, firmware ≥ 400). RAM-only setting changes via `0x37` flags 0x03 in a long-frame session, with read-back and the bit masks reported by `0x35`: absorption/float voltage, charge current, configured AC input limit, PowerAssist, weak AC input, UPS function. Solar and wind priority (settings 60 and 88, j9brown issue #14 and PR #15). Passthru (limit 0) stays available through the action. |
 | 0.3 | Address scan (stop after 3 misses) with one device per unit. Three-phase, split-phase and parallel support. Quattro AC input 2 limit (setting 49). A RAM-variable fallback for devices without standard info frames, such as the Compact (j9brown issue #11). |
 | 0.4 | ESS: scan for the assistant starting at RAM 128 (ESS has id 5). A setpoint number with periodic refresh, disable-charge and disable-feed-in switches. Optionally, Battery Operational Limits (`F` 9). |
 
@@ -94,3 +94,17 @@ These conventions come from j9brown's measurements and could not be verified her
   capacity is configured.
 
 `python tools/vebus_cli.py info <port>` prints all of these values.
+
+v0.2 adds these, verified only against the simulator. Check them with the CLI's
+`set-setting`, `set-flag` and `force` commands:
+
+- **Long-frame session:** `D`, then `S <state from D> 01 D0 3E 06` to enter long
+  frames, and `S 00 00 00 01 90 00 01` to leave them. This sequence comes from j9brown
+  PR #15, which reports it working on a MultiPlus-II.
+- **WriteViaID:** `37 03 <id> <lo> <hi>` should be acknowledged with `0x88`, and the
+  read-back should match. The spec says this needs firmware 412 or newer.
+- **Truncated replies:** whether mode 1 GetSettingInfo replies are cut short. If they
+  are, the ranges are read again in long-frame mode.
+- **Flag bits:** PowerAssist is bit 5 of setting 0, weak AC bit 14 and UPS bit 3 (set =
+  UPS off). Solar and wind priority is bit 9 of setting 60, with its voltage in setting
+  88.
