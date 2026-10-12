@@ -33,6 +33,7 @@ from .const import (
     F_BATTERY_OPERATIONAL_LIMITS,
     F_DC_INFO,
     F_MASTER_MULTI_LED,
+    F_RESET,
     MARKER_BOL,
     MARKER_BOOT,
     MARKER_MASTER_MULTI_LED,
@@ -40,6 +41,7 @@ from .const import (
     MIN_FIRMWARE_FORCE_CHARGE,
     MIN_FIRMWARE_RAM_ONLY_WRITE,
     MIN_MK3_FIRMWARE_BOL,
+    MIN_PERSISTENT_WRITE_INTERVAL,
     MODE_TO_SWITCH_STATE,
     S_FLAG_ABSOLUTE_LIMIT,
     S_FLAG_DONT_SEND,
@@ -266,6 +268,8 @@ class VeBusClient:
         self.info_frames = True
         # RAM ID of the ESS assistant record by address, if installed.
         self.ess_records: dict[int, int] = {}
+        # Time of the last persistent (EEPROM) write per setting.
+        self._persistent_writes: dict[int, float] = {}
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -691,8 +695,24 @@ class VeBusClient:
                 if info is not None:
                     self.setting_info[setting] = info
 
-    async def _write_setting_locked(self, setting: int, raw: int) -> int:
-        """Write a setting to RAM only and verify it by reading it back."""
+    def _check_persistent_rate(self, setting: int) -> None:
+        last = self._persistent_writes.get(setting)
+        if last is not None and time.monotonic() - last < MIN_PERSISTENT_WRITE_INTERVAL:
+            raise VeBusWriteError(
+                f"Setting {setting} was stored permanently less than"
+                f" {MIN_PERSISTENT_WRITE_INTERVAL // 60} minutes ago; wait to"
+                " protect the EEPROM"
+            )
+
+    async def _write_setting_locked(
+        self, setting: int, raw: int, *, persistent: bool = False
+    ) -> int:
+        """Write a setting and verify it by reading it back (lock held).
+
+        By default only the RAM copy changes. With ``persistent`` the value
+        is also stored in the EEPROM, which survives a restart but has a
+        limited number of write cycles.
+        """
         if not 0 <= setting <= 0xFF:
             raise ValueError("WriteViaID only addresses settings 0..255")
         if not 0 <= raw <= 0xFFFF:
@@ -700,7 +720,7 @@ class VeBusClient:
         try:
             reply = await self._winmon_locked(
                 WinmonCommand.WRITE_VIA_ID,
-                WRITE_VIA_ID_SETTING | WRITE_VIA_ID_RAM_ONLY,
+                WRITE_VIA_ID_SETTING | (0 if persistent else WRITE_VIA_ID_RAM_ONLY),
                 setting,
                 raw & 0xFF,
                 raw >> 8,
@@ -717,6 +737,8 @@ class VeBusClient:
             raise VeBusWriteError(
                 f"Setting {setting} reads back {readback} after writing {raw}"
             )
+        if persistent:
+            self._persistent_writes[setting] = time.monotonic()
         self._store_setting(setting, raw)
         return raw
 
@@ -730,13 +752,19 @@ class VeBusClient:
             settings[setting] = info.decode(raw)
         self.state = replace(self.state, settings=settings, settings_raw=settings_raw)
 
-    async def write_setting(self, setting: int, value: float) -> float:
-        """Change a setting in RAM only (lost when the device restarts).
+    async def write_setting(
+        self, setting: int, value: float, *, persistent: bool = False
+    ) -> float:
+        """Change a setting, in RAM only unless ``persistent``.
 
-        The value is checked against the range the device reports. Returns
-        the value read back from the device.
+        A RAM-only change is lost when the device restarts. A persistent
+        change is also stored in the EEPROM and is rate limited. The value is
+        checked against the range the device reports. Returns the value read
+        back from the device.
         """
         self._require_firmware(MIN_FIRMWARE_RAM_ONLY_WRITE, "Changing settings")
+        if persistent:
+            self._check_persistent_rate(setting)
         info = self.setting_info.get(setting)
         if info is None or info.minimum is None or info.maximum is None:
             raise VeBusNotSupportedError(f"Range of setting {setting} is unknown")
@@ -747,17 +775,23 @@ class VeBusClient:
                 f"..{info.decode(info.maximum)}"
             )
         async with self._long_frame_session():
-            raw = await self._write_setting_locked(setting, raw)
+            raw = await self._write_setting_locked(setting, raw, persistent=persistent)
         return info.decode(raw)
 
-    async def set_setting_flag(self, setting: int, flag: int, enabled: bool) -> int:
-        """Set or clear bits of a flag setting in RAM only (read-modify-write).
+    async def set_setting_flag(
+        self, setting: int, flag: int, enabled: bool, *, persistent: bool = False
+    ) -> int:
+        """Set or clear bits of a flag setting (read-modify-write).
+
+        RAM only unless ``persistent`` (see :meth:`write_setting`).
 
         Bits that the device reports as unsupported are refused (the maximum
         of a flag setting is the mask of its supported bits). Returns the new
         raw value.
         """
         self._require_firmware(MIN_FIRMWARE_RAM_ONLY_WRITE, "Changing settings")
+        if persistent:
+            self._check_persistent_rate(setting)
         info = self.setting_info.get(setting)
         if info is not None and info.maximum is not None and flag & ~info.maximum:
             raise VeBusNotSupportedError(
@@ -770,10 +804,20 @@ class VeBusClient:
             if current is None:
                 raise VeBusNotSupportedError(f"Setting {setting} cannot be read")
             new = current | flag if enabled else current & ~flag
-            if new == current:
+            if new == current and not persistent:
                 self._store_setting(setting, current)
                 return current
-            return await self._write_setting_locked(setting, new)
+            return await self._write_setting_locked(setting, new, persistent=persistent)
+
+    async def restart_device(self) -> None:
+        """Restart all VE.Bus devices ('F' 8 with long address 0).
+
+        The relays open while the devices restart, so the AC outputs lose
+        power for several seconds. The device does not reply; the polling
+        loop reconnects once it is back.
+        """
+        await self._command(CMD_SPECIAL, [F_RESET, 0, 0, 0, 0], None)
+        self._readdress = True
 
     async def force_charge_state(self, state: ForceChargeState) -> DeviceStateInfo:
         """Force the charger into equalise, absorption or float."""
