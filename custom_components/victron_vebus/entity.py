@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
+
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER
 from .coordinator import VeBusCoordinator
+from .vebus import VeBusError, VeBusNotSupportedError
 
 
 def device_identifier(coordinator: VeBusCoordinator) -> str:
@@ -38,3 +42,31 @@ class VeBusEntity(CoordinatorEntity[VeBusCoordinator]):
             name=coordinator.config_entry.title,
             sw_version=str(firmware.version) if firmware else None,
         )
+
+    async def async_device_call[T](self, call: Awaitable[T]) -> T:
+        """Run a command on the device and publish the resulting state.
+
+        Errors become translated Home Assistant exceptions.
+        """
+        try:
+            result = await call
+        except ValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_value",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        except VeBusNotSupportedError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="not_supported",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        except VeBusError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        self.coordinator.async_set_updated_data(self.coordinator.client.state)
+        return result

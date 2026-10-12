@@ -18,7 +18,18 @@ from .const import (
     DOMAIN,
     UNAVAILABLE_ISSUE_DELAY,
 )
-from .vebus import DeviceIdentity, InterfaceFlag, VeBusClient, VeBusState
+from .vebus import (
+    DeviceIdentity,
+    InterfaceFlag,
+    Setting,
+    SettingFlag,
+    VeBusClient,
+    VeBusState,
+)
+from .vebus.const import (
+    MIN_FIRMWARE_RAM_ONLY_WRITE,
+    MIN_FIRMWARE_SOLAR_WIND_PRIORITY,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +79,46 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
     async def _async_update_data(self) -> VeBusState:
         """Return the latest state; polling is done by the client loop."""
         return self.client.state
+
+    def firmware_at_least(self, version: int) -> bool:
+        """Return True if the device firmware revision is at least ``version``."""
+        firmware = self.client.firmware
+        return firmware is not None and firmware.version >= version
+
+    def can_write_setting(self, setting: int) -> bool:
+        """Return True if a numeric setting can be changed (range is known)."""
+        info = self.client.setting_info.get(setting)
+        return (
+            self.firmware_at_least(MIN_FIRMWARE_RAM_ONLY_WRITE)
+            and info is not None
+            and info.minimum is not None
+            and info.maximum is not None
+        )
+
+    def can_write_flag(self, setting: int, flag: int) -> bool:
+        """Return True if a bit of a flag setting can be changed."""
+        if not self.firmware_at_least(MIN_FIRMWARE_RAM_ONLY_WRITE):
+            return False
+        if self.client.state.settings_raw.get(setting) is None:
+            return False
+        info = self.client.setting_info.get(setting)
+        return info is None or info.maximum is None or not flag & ~info.maximum
+
+    def supports_solar_wind_priority(self) -> bool:
+        """Return True if the device has solar & wind priority configured.
+
+        The feature needs firmware 506. It is only offered when the device
+        lists the bit as supported or has it set.
+        """
+        if not self.firmware_at_least(MIN_FIRMWARE_SOLAR_WIND_PRIORITY):
+            return False
+        raw = self.client.state.settings_raw.get(Setting.FLAGS_2)
+        if raw is None:
+            return False
+        info = self.client.setting_info.get(Setting.FLAGS_2)
+        mask = info.maximum if info is not None else None
+        flag = SettingFlag.SOLAR_WIND_PRIORITY
+        return bool(raw & flag) or (mask is not None and bool(mask & flag))
 
     @callback
     def async_start(self) -> None:

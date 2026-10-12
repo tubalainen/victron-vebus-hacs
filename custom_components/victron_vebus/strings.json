@@ -61,7 +61,7 @@
         },
         "data_description": {
           "scan_interval": "Seconds between polls. At 2400 baud one poll takes about a second.",
-          "enable_controls": "Create the mode select, the AC input current limit and the set_remote_panel_state action. These act as a remote panel and change how the device operates."
+          "enable_controls": "Create entities that change how the device operates: the remote mode and AC input current limit, the set_remote_panel_state action, buttons to force a charge state, and the charger settings and PowerAssist, weak AC, UPS and solar & wind priority switches. Settings are changed in the device's RAM only and return to the stored configuration when the device restarts."
         }
       }
     }
@@ -238,6 +238,9 @@
       },
       "interface_version": {
         "name": "MK3 interface version"
+      },
+      "solar_wind_priority_voltage": {
+        "name": "Solar & wind priority voltage"
       }
     },
     "binary_sensor": {
@@ -321,6 +324,18 @@
     "switch": {
       "keep_awake": {
         "name": "Keep awake"
+      },
+      "power_assist": {
+        "name": "PowerAssist"
+      },
+      "weak_ac_input": {
+        "name": "Weak AC input"
+      },
+      "ups_function": {
+        "name": "UPS function"
+      },
+      "solar_wind_priority": {
+        "name": "Solar & wind priority"
       }
     },
     "select": {
@@ -337,6 +352,32 @@
     "number": {
       "remote_current_limit": {
         "name": "Remote AC input current limit"
+      },
+      "absorption_voltage": {
+        "name": "Absorption voltage"
+      },
+      "float_voltage": {
+        "name": "Float voltage"
+      },
+      "charge_current_limit": {
+        "name": "Charge current limit"
+      },
+      "configured_ac_input_current_limit": {
+        "name": "Configured AC input current limit"
+      },
+      "solar_wind_priority_voltage": {
+        "name": "Solar & wind priority voltage"
+      }
+    },
+    "button": {
+      "force_absorption": {
+        "name": "Force absorption"
+      },
+      "force_float": {
+        "name": "Force float"
+      },
+      "force_equalise": {
+        "name": "Force equalise"
       }
     }
   },
@@ -346,6 +387,12 @@
     },
     "command_failed": {
       "message": "The VE.Bus device did not accept the command: {error}"
+    },
+    "invalid_value": {
+      "message": "Invalid value: {error}"
+    },
+    "not_supported": {
+      "message": "Not supported by this device: {error}"
     }
   },
   "issues": {

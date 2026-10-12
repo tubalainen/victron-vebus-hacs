@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 import contextlib
 from dataclasses import dataclass, field, replace
 import functools
@@ -17,6 +17,7 @@ from .const import (
     A_ACTION_SET,
     CMD_ADDRESS,
     CMD_INTERFACE,
+    CMD_INTERFACE_STATE,
     CMD_LED,
     CMD_SPECIAL,
     CMD_STATE,
@@ -26,11 +27,17 @@ from .const import (
     F_MASTER_MULTI_LED,
     MARKER_BOOT,
     MARKER_MASTER_MULTI_LED,
+    MIN_FIRMWARE_FORCE_CHARGE,
+    MIN_FIRMWARE_RAM_ONLY_WRITE,
     MODE_TO_SWITCH_STATE,
     S_FLAG_ABSOLUTE_LIMIT,
     S_FLAG_DONT_SEND,
     S_FLAGS_EXT0_WINMON_MODE1,
     S_LIMIT_IGNORE,
+    S_LONG_FRAMES_TAIL,
+    WRITE_VIA_ID_RAM_ONLY,
+    WRITE_VIA_ID_SETTING,
+    ForceChargeState,
     InterfaceFlag,
     Mode,
     RamVar,
@@ -98,7 +105,11 @@ SLOW_SETTINGS: tuple[Setting, ...] = (
     Setting.I_BAT_BULK,
     Setting.I_MAINS_LIMIT_AC1,
     Setting.BATTERY_CAPACITY,
+    Setting.SOLAR_WIND_PRIORITY_VOLTAGE,
 )
+# Flag settings, kept as raw values.
+SLOW_RAW_SETTINGS: tuple[Setting, ...] = (Setting.FLAGS_0, Setting.FLAGS_2)
+SETTING_INFO_IDS: tuple[Setting, ...] = (*SLOW_RAW_SETTINGS, *SLOW_SETTINGS)
 RAM_VARS: tuple[RamVar, ...] = (
     *INFO_FRAME_VARS,
     *FAST_RAM_VARS,
@@ -107,6 +118,17 @@ RAM_VARS: tuple[RamVar, ...] = (
 # The MultiPlus-II reports the inverter current as unsigned but sends negative
 # values while charging, so it is always decoded as signed.
 FORCE_SIGNED_RAM_VARS = frozenset({RamVar.I_INVERTER_RMS})
+# 'S' data that selects Winmon mode 1 (short frames) without changing the
+# remote panel state: absolute limit format and do not send the panel state.
+S_MODE1_DATA = (
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    S_FLAG_ABSOLUTE_LIMIT | S_FLAG_DONT_SEND,
+    0x00,
+    S_FLAGS_EXT0_WINMON_MODE1,
+)
 # Errors ignored while closing the connection.
 CLOSE_ERRORS: tuple[type[BaseException], ...] = (
     *CONNECTION_ERRORS,
@@ -128,6 +150,10 @@ class VeBusTimeoutError(VeBusError):
 
 class VeBusNotSupportedError(VeBusError):
     """The device does not support the requested command or value."""
+
+
+class VeBusWriteError(VeBusError):
+    """The device did not accept a setting change."""
 
 
 @dataclass(slots=True)
@@ -188,6 +214,7 @@ class VeBusClient:
         self._tags = itertools.cycle(CMD_WINMON_TAGGED)
         self._last_rx = 0.0
         self._readdress = False
+        self._long_frames = False
         self._connection_lost = False
         self.stats = ClientStatistics()
         self.mk3_version: int | None = None
@@ -341,13 +368,22 @@ class VeBusClient:
     async def _command(
         self,
         command: int,
-        data: bytes | list[int] = b"",
+        data: Iterable[int] = b"",
         predicate: Callable[[Frame], bool] | None = None,
         timeout: float | None = None,
     ) -> Frame | None:
         async with self._lock:
-            await self._ensure_address()
+            await self._prepare()
             return await self._request(encode_frame(command, data), predicate, timeout)
+
+    async def _prepare(self) -> None:
+        """Restore short frames and the address before a request (lock held)."""
+        if self._long_frames:
+            await self._request(
+                encode_frame(CMD_STATE, S_MODE1_DATA), _mk_reply(CMD_STATE)
+            )
+            self._long_frames = False
+        await self._ensure_address()
 
     async def _ensure_address(self) -> None:
         if not self._readdress:
@@ -361,11 +397,13 @@ class VeBusClient:
     async def _winmon(self, command: WinmonCommand, *args: int) -> bytes:
         """Send a tagged Winmon command and return the reply after the tag."""
         async with self._lock:
-            await self._ensure_address()
-            tag = next(self._tags)
-            reply = await self._request(
-                encode_frame(tag, [command, *args]), _mk_reply(tag)
-            )
+            await self._prepare()
+            return await self._winmon_locked(command, *args)
+
+    async def _winmon_locked(self, command: WinmonCommand, *args: int) -> bytes:
+        """Like _winmon, for callers that already hold the lock."""
+        tag = next(self._tags)
+        reply = await self._request(encode_frame(tag, [command, *args]), _mk_reply(tag))
         assert reply is not None
         data = reply.data
         if data and data[0] == WinmonReply.UNKNOWN_COMMAND:
@@ -398,19 +436,7 @@ class VeBusClient:
         Other tools such as VictronConnect may leave the interface in mode 2.
         Flags 0x90 = absolute current limit format and do not send panel state.
         """
-        await self._command(
-            CMD_STATE,
-            [
-                0x00,
-                0x00,
-                0x00,
-                0x01,
-                S_FLAG_ABSOLUTE_LIMIT | S_FLAG_DONT_SEND,
-                0x00,
-                S_FLAGS_EXT0_WINMON_MODE1,
-            ],
-            _mk_reply(CMD_STATE),
-        )
+        await self._command(CMD_STATE, S_MODE1_DATA, _mk_reply(CMD_STATE))
 
     async def set_remote_panel_state(
         self, mode: Mode, current_limit: float | None = None
@@ -526,17 +552,189 @@ class VeBusClient:
             )
         return result
 
+    async def read_setting_raw(self, setting: int) -> int | None:
+        """Read the raw 16-bit value of a setting, None if unsupported."""
+        reply = await self._winmon(
+            WinmonCommand.READ_SETTING, setting & 0xFF, setting >> 8
+        )
+        return _setting_value(reply)
+
     async def read_setting(self, setting: int) -> float | None:
         """Read a setting and decode it, None if unsupported."""
         info = self.setting_info.get(setting)
         if info is None:
             return None
-        reply = await self._winmon(
-            WinmonCommand.READ_SETTING, setting & 0xFF, setting >> 8
+        raw = await self.read_setting_raw(setting)
+        return None if raw is None else info.decode(raw)
+
+    # ------------------------------------------------------------------
+    # Long frames (Winmon mode 2): RAM-only setting writes
+
+    @contextlib.asynccontextmanager
+    async def _long_frame_session(self) -> AsyncIterator[None]:
+        """Switch the interface to long frames for the duration of the block.
+
+        WriteViaID (0x37) and the long form of GetSettingInfo are Winmon
+        mode 2 only. The current remote panel state is read with 'D' and sent
+        back unchanged. Afterwards mode 1 is restored; if that fails it is
+        retried before the next request. Holds the lock for the whole block,
+        so polling pauses meanwhile.
+        """
+        async with self._lock:
+            await self._prepare()
+            reply = await self._request(
+                encode_frame(CMD_INTERFACE_STATE), _mk_reply(CMD_INTERFACE_STATE, 3)
+            )
+            assert reply is not None
+            self._long_frames = True
+            await self._request(
+                encode_frame(CMD_STATE, [*reply.data[0:3], *S_LONG_FRAMES_TAIL]),
+                _mk_reply(CMD_STATE),
+            )
+            try:
+                yield
+            finally:
+                for _ in range(2):
+                    try:
+                        await self._request(
+                            encode_frame(CMD_STATE, S_MODE1_DATA), _mk_reply(CMD_STATE)
+                        )
+                    except VeBusError:
+                        continue
+                    self._long_frames = False
+                    break
+                else:
+                    _LOGGER.warning(
+                        "Could not switch the interface back to short frames"
+                    )
+
+    def _require_firmware(self, minimum: int, feature: str) -> None:
+        version = self.firmware.version if self.firmware else None
+        if version is None or version < minimum:
+            raise VeBusNotSupportedError(
+                f"{feature} needs device firmware {minimum} or later"
+                f" (device reports {version if version is not None else 'unknown'})"
+            )
+
+    async def complete_setting_info(self, settings: Iterable[int]) -> None:
+        """Re-read setting info in long-frame mode where mode 1 gave no range.
+
+        The Winmon mode 1 reply can be cut short before the minimum and
+        maximum, which writable settings need.
+        """
+        missing = [
+            setting
+            for setting in settings
+            if (info := self.setting_info.get(setting)) is None
+            or info.minimum is None
+            or info.maximum is None
+        ]
+        if not missing:
+            return
+        async with self._long_frame_session():
+            for setting in missing:
+                try:
+                    reply = await self._winmon_locked(
+                        WinmonCommand.GET_SETTING_INFO, setting & 0xFF, setting >> 8
+                    )
+                    info = decode_setting_info(reply, long_form=True)
+                except (VeBusTimeoutError, VeBusNotSupportedError, DecodeError) as err:
+                    _LOGGER.debug("Setting info %s not available: %s", setting, err)
+                    continue
+                if info is not None:
+                    self.setting_info[setting] = info
+
+    async def _write_setting_locked(self, setting: int, raw: int) -> int:
+        """Write a setting to RAM only and verify it by reading it back."""
+        if not 0 <= setting <= 0xFF:
+            raise ValueError("WriteViaID only addresses settings 0..255")
+        if not 0 <= raw <= 0xFFFF:
+            raise ValueError("Setting values are 16 bit")
+        try:
+            reply = await self._winmon_locked(
+                WinmonCommand.WRITE_VIA_ID,
+                WRITE_VIA_ID_SETTING | WRITE_VIA_ID_RAM_ONLY,
+                setting,
+                raw & 0xFF,
+                raw >> 8,
+            )
+        except VeBusTimeoutError:
+            # Not every device acknowledges; the read back decides.
+            reply = b""
+        if reply and reply[0] == WinmonReply.ACCESS_LEVEL_REQUIRED:
+            raise VeBusWriteError(f"Setting {setting} needs a higher access level")
+        readback = _setting_value(
+            await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
         )
-        if len(reply) < 3 or reply[0] != WinmonReply.READ_SETTING_OK:
-            return None
-        return info.decode(int.from_bytes(reply[1:3], "little"))
+        if readback != raw:
+            raise VeBusWriteError(
+                f"Setting {setting} reads back {readback} after writing {raw}"
+            )
+        self._store_setting(setting, raw)
+        return raw
+
+    def _store_setting(self, setting: int, raw: int) -> None:
+        settings_raw = dict(self.state.settings_raw)
+        settings = dict(self.state.settings)
+        if setting in SLOW_RAW_SETTINGS:
+            settings_raw[setting] = raw
+        info = self.setting_info.get(setting)
+        if info is not None and setting in SLOW_SETTINGS:
+            settings[setting] = info.decode(raw)
+        self.state = replace(self.state, settings=settings, settings_raw=settings_raw)
+
+    async def write_setting(self, setting: int, value: float) -> float:
+        """Change a setting in RAM only (lost when the device restarts).
+
+        The value is checked against the range the device reports. Returns
+        the value read back from the device.
+        """
+        self._require_firmware(MIN_FIRMWARE_RAM_ONLY_WRITE, "Changing settings")
+        info = self.setting_info.get(setting)
+        if info is None or info.minimum is None or info.maximum is None:
+            raise VeBusNotSupportedError(f"Range of setting {setting} is unknown")
+        raw = info.encode(value)
+        if not info.minimum <= raw <= info.maximum:
+            raise ValueError(
+                f"{value} is outside {info.decode(info.minimum)}"
+                f"..{info.decode(info.maximum)}"
+            )
+        async with self._long_frame_session():
+            raw = await self._write_setting_locked(setting, raw)
+        return info.decode(raw)
+
+    async def set_setting_flag(self, setting: int, flag: int, enabled: bool) -> int:
+        """Set or clear bits of a flag setting in RAM only (read-modify-write).
+
+        Bits that the device reports as unsupported are refused (the maximum
+        of a flag setting is the mask of its supported bits). Returns the new
+        raw value.
+        """
+        self._require_firmware(MIN_FIRMWARE_RAM_ONLY_WRITE, "Changing settings")
+        info = self.setting_info.get(setting)
+        if info is not None and info.maximum is not None and flag & ~info.maximum:
+            raise VeBusNotSupportedError(
+                f"Setting {setting} does not support bits 0x{flag:04x}"
+            )
+        async with self._long_frame_session():
+            current = _setting_value(
+                await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
+            )
+            if current is None:
+                raise VeBusNotSupportedError(f"Setting {setting} cannot be read")
+            new = current | flag if enabled else current & ~flag
+            if new == current:
+                self._store_setting(setting, current)
+                return current
+            return await self._write_setting_locked(setting, new)
+
+    async def force_charge_state(self, state: ForceChargeState) -> DeviceStateInfo:
+        """Force the charger into equalise, absorption or float."""
+        self._require_firmware(MIN_FIRMWARE_FORCE_CHARGE, "Forcing a charge state")
+        reply = await self._winmon(WinmonCommand.GET_SET_DEVICE_STATE, int(state), 0)
+        info = decode_device_state(reply)
+        self.state = replace(self.state, device_state=info)
+        return info
 
     # ------------------------------------------------------------------
     # High level operations
@@ -560,7 +758,7 @@ class VeBusClient:
         if missing:
             raise VeBusNotSupportedError(f"Device does not describe {missing}")
 
-        for setting in SLOW_SETTINGS:
+        for setting in SETTING_INFO_IDS:
             if setting not in self.setting_info:
                 try:
                     self.setting_info[setting] = await _retry(
@@ -599,6 +797,8 @@ class VeBusClient:
         for setting in SLOW_SETTINGS:
             if self.setting_info.get(setting) is not None:
                 self._slow_queue.append(("setting", (setting,)))
+        for setting in SLOW_RAW_SETTINGS:
+            self._slow_queue.append(("setting_raw", (setting,)))
 
     async def poll(
         self, *, full: bool = False, interface_flags: InterfaceFlag | None = None
@@ -614,6 +814,7 @@ class VeBusClient:
             ac=dict(self.state.ac),
             ram=dict(self.state.ram),
             settings=dict(self.state.settings),
+            settings_raw=dict(self.state.settings_raw),
             mk3_version=self.mk3_version,
             firmware=self.firmware,
             phases=self.phases,
@@ -669,6 +870,8 @@ class VeBusClient:
             try:
                 if kind == "ram":
                     state.ram.update(await self.read_ram_vars(ids))
+                elif kind == "setting_raw":
+                    state.settings_raw[ids[0]] = await self.read_setting_raw(ids[0])
                 else:
                     state.settings[ids[0]] = await self.read_setting(ids[0])
             except (VeBusTimeoutError, VeBusNotSupportedError) as err:
@@ -758,3 +961,10 @@ async def _retry[T](
             if attempt == attempts:
                 raise
     raise AssertionError("unreachable")
+
+
+def _setting_value(reply: bytes) -> int | None:
+    """Return the value of a ReadSetting reply, None if unsupported."""
+    if len(reply) < 3 or reply[0] != WinmonReply.READ_SETTING_OK:
+        return None
+    return int.from_bytes(reply[1:3], "little")

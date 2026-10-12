@@ -11,17 +11,20 @@ from .client import (
     VeBusError,
     VeBusNotSupportedError,
     VeBusTimeoutError,
+    VeBusWriteError,
 )
 from .const import (
     AlarmState,
     ChargeState,
     DeviceState,
+    ForceChargeState,
     InterfaceFlag,
     Led,
     LedState,
     Mode,
     RamVar,
     Setting,
+    SettingFlag,
 )
 from .models import (
     AcInfo,
@@ -43,6 +46,7 @@ __all__ = [
     "DeviceState",
     "DeviceStateInfo",
     "FirmwareVersion",
+    "ForceChargeState",
     "InterfaceFlag",
     "Led",
     "LedInfo",
@@ -50,10 +54,12 @@ __all__ = [
     "Mode",
     "RamVar",
     "Setting",
+    "SettingFlag",
     "VeBusClient",
     "VeBusConnectionError",
     "VeBusError",
     "VeBusNotSupportedError",
     "VeBusState",
     "VeBusTimeoutError",
+    "VeBusWriteError",
 ]

@@ -15,6 +15,7 @@ MasterMultiLED frame, ...) use other marker bytes.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .const import (
@@ -36,7 +37,7 @@ def checksum(data: bytes) -> int:
     return -sum(data) & 0xFF
 
 
-def encode_frame(command: int, data: bytes | bytearray | list[int] = b"") -> bytes:
+def encode_frame(command: int, data: Iterable[int] = b"") -> bytes:
     """Encode an interface command frame (marker 0xFF)."""
     body = bytes([MARKER_MK, command]) + bytes(data)
     head = bytes([len(body)]) + body

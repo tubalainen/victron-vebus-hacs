@@ -359,6 +359,19 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         exists_fn=_has_setting(Setting.I_MAINS_LIMIT_AC1),
     ),
     VeBusSensorEntityDescription(
+        key="solar_wind_priority_voltage",
+        translation_key="solar_wind_priority_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        suggested_display_precision=2,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_setting(Setting.SOLAR_WIND_PRIORITY_VOLTAGE),
+        exists_fn=lambda c: (
+            c.supports_solar_wind_priority()
+            and _has_setting(Setting.SOLAR_WIND_PRIORITY_VOLTAGE)(c)
+        ),
+    ),
+    VeBusSensorEntityDescription(
         key="battery_capacity",
         translation_key="battery_capacity",
         native_unit_of_measurement="Ah",

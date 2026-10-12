@@ -87,6 +87,15 @@ class SettingInfo:
         """Decode a raw unsigned 16-bit setting value."""
         return self.scale * (raw + self.offset)
 
+    def encode(self, value: float) -> int:
+        """Encode a value to the raw setting value (rounded)."""
+        return round(value / self.scale) - self.offset
+
+    @property
+    def step(self) -> float:
+        """Return the smallest change of the decoded value."""
+        return self.scale
+
 
 @dataclass(frozen=True, slots=True)
 class FirmwareVersion:
@@ -249,6 +258,7 @@ class VeBusState:
     device_state: DeviceStateInfo | None = None
     ram: dict[int, float | None] = field(default_factory=dict)
     settings: dict[int, float | None] = field(default_factory=dict)
+    settings_raw: dict[int, int | None] = field(default_factory=dict)
     interface_flags: int | None = None
     timestamp: float = field(default_factory=time.monotonic)
 
@@ -259,3 +269,8 @@ class VeBusState:
     def setting_value(self, setting: int) -> float | None:
         """Return a decoded setting."""
         return self.settings.get(setting)
+
+    def setting_flag(self, setting: int, flag: int) -> bool | None:
+        """Return whether a bit of a flag setting is set."""
+        raw = self.settings_raw.get(setting)
+        return None if raw is None else bool(raw & flag)
