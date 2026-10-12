@@ -130,10 +130,16 @@ class SimulatedMultiPlus:
     # Data of every Battery Operational Limits frame ('F' 9).
     bol_frames: list[bytes] = field(default_factory=list)
 
+    # Number of 'F' 8 resets received.
+    resets: int = 0
+    # Settings as stored in the EEPROM; a reset restores them.
+    eeprom: dict[int, int] = field(default_factory=dict)
+
     def __post_init__(self) -> None:
         """Add the Quattro AC input 2 limit and the ESS assistant."""
         if self.quattro:
             self.settings[49] = 120
+        self.eeprom = dict(self.settings)
 
     def enable_ess(self, addresses: tuple[int, ...] = (0,)) -> None:
         """Install the ESS assistant on the given addresses."""
@@ -204,6 +210,12 @@ class SimulatedMultiPlus:
     def _special(self, kind: int, data: bytes = b"") -> list[bytes]:
         if not self.info_frames and kind <= 4:
             return []
+        if kind == 8:
+            # Restart: RAM settings revert to the EEPROM, interface state resets.
+            self.resets += 1
+            self.settings = dict(self.eeprom)
+            self.long_frames = False
+            return []
         if kind == 9:
             self.bol_frames.append(bytes(data))
             return [_raw_frame(0x3C, list(data))]
@@ -273,6 +285,8 @@ class SimulatedMultiPlus:
                 return [0x80, 0x02, 0x00]
             self.writes.append((flags, setting, value))
             self.settings[setting] = value
+            if not flags & 0x02:  # not RAM only
+                self.eeprom[setting] = value
             return [0x88, 0x00, 0x00] if self.ack_writes else []
         if cmd == 0x30:
             # Other units share the values they do not override.

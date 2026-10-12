@@ -42,6 +42,7 @@ F_AC_L2 = 2
 F_AC_L3 = 3
 F_AC_L4 = 4
 F_MASTER_MULTI_LED = 5
+F_RESET = 8  # 'F' 8 <ID2> <ID3> <ID0> <ID1>: reset by long address, 0 = all
 F_BATTERY_OPERATIONAL_LIMITS = 9
 
 # Phase info byte of an info frame (section 6.1).
@@ -79,6 +80,9 @@ A_ACTION_SET = 0x01
 # (do not write the EEPROM, needs firmware 412 or later).
 WRITE_VIA_ID_SETTING = 0x01
 WRITE_VIA_ID_RAM_ONLY = 0x02
+# Persistent (EEPROM) writes of one setting are allowed at most this often
+# (seconds), so a misbehaving caller cannot wear out the EEPROM.
+MIN_PERSISTENT_WRITE_INTERVAL = 300
 
 # Minimum device firmware revisions (the CCC part of AABBCCC).
 MIN_FIRMWARE_FORCE_CHARGE = 400

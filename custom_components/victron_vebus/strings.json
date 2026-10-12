@@ -34,17 +34,35 @@
       "reconfigure": {
         "title": "Change device",
         "data": {
-          "device": "Device"
+          "device": "Device",
+          "usage": "Usage"
         },
         "data_description": {
-          "device": "New device path or URL of the MK3 interface."
+          "device": "New device path or URL of the MK3 interface.",
+          "usage": "Monitor only, or monitor and control. Switching to control asks you to confirm the warning again."
+        },
+        "description": "Choosing *monitor only* removes all controls and device actions."
+      },
+      "usage": {
+        "title": "How may Home Assistant use the Multi?",
+        "description": "- **Monitor only:** Home Assistant reads values and never changes how the Multi operates.\n- **Monitor and control:** Home Assistant can also change how the Multi operates: controls on the dashboard and guided device actions.\n\nYou can change this later with *Reconfigure*.\n\n**Disclaimer:** this is an unofficial community integration. It is not made, endorsed or supported by Victron Energy. It is provided as is, without any warranty. The authors and contributors take **no responsibility whatsoever** for any damage to equipment, batteries or property, for injury, or for any other loss caused by using it. You use it entirely at your own risk.",
+        "data": {
+          "usage": "Usage"
+        }
+      },
+      "control_warning": {
+        "title": "⚠️ Read this before enabling control",
+        "description": "**DO NOT CHANGE ANY SETTING IF YOU ARE NOT SURE WHAT IT DOES.**\n\nWrong settings can cut the power on AC out 1 and AC out 2, stop the battery from charging, or damage the battery, the Multi and connected equipment.\n\n- Critical changes (mode, passthru, restart, charge voltages, PowerAssist, UPS function, equalisation, permanent settings) are only offered under *Configure → Device actions*. Each shows its risks and must be confirmed.\n- Some actions restart the Multi or switch its relays: **AC out 1 and AC out 2 then lose power.**\n- By default settings change in the Multi's RAM only and return to the stored configuration when it restarts.\n\n**Disclaimer:** this is an unofficial community integration. It is not made, endorsed or supported by Victron Energy. It is provided as is, without any warranty. The authors and contributors take **no responsibility whatsoever** for any damage to equipment, batteries or property, for injury, or for any other loss caused by using it. You use it entirely at your own risk.",
+        "data": {
+          "acknowledge": "I understand: I will not change settings I am not sure about, and I accept full responsibility for what I change"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to open the serial port.",
       "no_response": "The interface or the VE.Bus device did not respond. Make sure the device is switched on and connected to the MK3.",
-      "unknown": "Unexpected error."
+      "unknown": "Unexpected error.",
+      "acknowledge_required": "Tick the box to confirm that you have read and understood the warning."
     },
     "abort": {
       "already_configured": "This interface is already configured.",
@@ -54,22 +72,94 @@
   },
   "options": {
     "step": {
+      "disable_battery_limits": {
+        "title": "Turn off battery operational limits",
+        "description": "The Multi keeps expecting battery limits until it restarts. Once Home Assistant stops sending them, **the Multi stops charging and inverting after 5 minutes**. Restart the Multi (switch it off and on) within 5 minutes after confirming, or leave this option on."
+      },
       "init": {
+        "title": "Victron VE.Bus",
+        "menu_options": {
+          "settings": "Integration settings",
+          "actions": "Device actions (restart, mode, passthru, charger settings…)"
+        }
+      },
+      "settings": {
         "data": {
           "scan_interval": "Polling interval",
-          "enable_controls": "Enable control entities",
           "enable_battery_limits": "Enable battery operational limits (BMS)"
         },
         "data_description": {
           "scan_interval": "Seconds between polls. At 2400 baud one poll takes about a second.",
-          "enable_controls": "Create entities that change how the device operates: the remote mode and AC input current limit, the set_remote_panel_state action, buttons to force a charge state, and the charger settings and PowerAssist, weak AC, UPS and solar & wind priority switches. Settings are changed in the device's RAM only and return to the stored configuration when the device restarts.",
-          "enable_battery_limits": "Advanced, lithium batteries only. Creates four numbers whose limits are sent to the Multi on every poll, like a battery management system. WARNING: once the Multi has received limits, it stops charging AND inverting if it gets none for 5 minutes, and keeps expecting them until it is restarted. Needs 'Enable control entities' and device firmware 415 or later."
+          "enable_battery_limits": "Advanced, lithium batteries only. Creates four numbers whose limits are sent to the Multi on every poll, like a battery management system. WARNING: once the Multi has received limits, it stops charging AND inverting if it gets none for 5 minutes, and keeps expecting them until it is restarted. Needs device firmware 415 or later."
+        },
+        "title": "Integration settings",
+        "description": "Monitoring or control is chosen when the integration is added, or with *Reconfigure*."
+      },
+      "actions": {
+        "title": "Device actions",
+        "description": "These actions change how the Multi operates. Each one shows its risks and asks for confirmation before anything is sent.",
+        "menu_options": {
+          "action_mode": "Change the mode (on, off, charger only, inverter only)",
+          "action_passthru": "Enter or leave passthru",
+          "action_setting": "Change a charger setting",
+          "action_flag": "Switch PowerAssist, weak AC input, UPS or solar & wind priority",
+          "action_equalise": "Start equalisation",
+          "action_restart": "Restart the Multi"
         }
       },
-      "disable_battery_limits": {
-        "title": "Turn off battery operational limits",
-        "description": "The Multi keeps expecting battery limits until it restarts. Once Home Assistant stops sending them, **the Multi stops charging and inverting after 5 minutes**. Restart the Multi (switch it off and on) within 5 minutes after confirming, or leave this option on."
+      "action_mode": {
+        "title": "Change the mode",
+        "description": "Choose the remote panel mode. The next screen shows what it does to AC out 1 and AC out 2.",
+        "data": {
+          "mode": "Mode"
+        }
+      },
+      "action_passthru": {
+        "title": "Passthru",
+        "description": "Passthru sets the remote AC input current limit to 0 A. To leave it, the limit below is restored.",
+        "data": {
+          "passthru": "Action",
+          "current_limit": "Current limit when leaving passthru"
+        }
+      },
+      "action_setting": {
+        "title": "Change a charger setting",
+        "description": "Current values and allowed ranges:\n{ranges}\n\n{error}",
+        "data": {
+          "setting": "Setting",
+          "value": "New value",
+          "persistent": "Store permanently (EEPROM)"
+        },
+        "data_description": {
+          "persistent": "Off: the change is lost when the Multi restarts. On: stored permanently; limited to once per 5 minutes per setting."
+        }
+      },
+      "action_flag": {
+        "title": "Switch a feature",
+        "data": {
+          "flag": "Feature",
+          "enabled": "On",
+          "persistent": "Store permanently (EEPROM)"
+        },
+        "data_description": {
+          "persistent": "Off: the change is lost when the Multi restarts. On: stored permanently; limited to once per 5 minutes per setting."
+        }
+      },
+      "confirm": {
+        "title": "Are you sure?",
+        "description": "## {action}\n\n{warning}\n\n**If you are not sure, do not continue.** You carry out this action at your own risk; the authors take no responsibility for any damage.\n\n{error}",
+        "data": {
+          "acknowledge": "I understand the risks and want to continue"
+        }
       }
+    },
+    "error": {
+      "acknowledge_required": "Tick the box to confirm that you understand the risks.",
+      "invalid_value": "Invalid value: {error}",
+      "command_failed": "The device did not accept the command: {error}"
+    },
+    "abort": {
+      "action_done": "{result}"
     }
   },
   "entity": {
@@ -346,11 +436,6 @@
             "name": "Blinking"
           }
         }
-      }
-    },
-    "switch": {
-      "keep_awake": {
-        "name": "Keep awake"
       },
       "power_assist": {
         "name": "PowerAssist"
@@ -360,6 +445,11 @@
       },
       "ups_function": {
         "name": "UPS function"
+      }
+    },
+    "switch": {
+      "keep_awake": {
+        "name": "Keep awake"
       },
       "solar_wind_priority": {
         "name": "Solar & wind priority"
@@ -374,26 +464,9 @@
         "name": "ESS disable feed-in"
       }
     },
-    "select": {
-      "remote_mode": {
-        "name": "Remote mode",
-        "state": {
-          "off": "Off",
-          "on": "On",
-          "charger_only": "Charger only",
-          "inverter_only": "Inverter only"
-        }
-      }
-    },
     "number": {
       "remote_current_limit": {
         "name": "Remote AC input current limit"
-      },
-      "absorption_voltage": {
-        "name": "Absorption voltage"
-      },
-      "float_voltage": {
-        "name": "Float voltage"
       },
       "charge_current_limit": {
         "name": "Charge current limit"
@@ -432,9 +505,6 @@
       },
       "force_float": {
         "name": "Force float"
-      },
-      "force_equalise": {
-        "name": "Force equalise"
       }
     }
   },
@@ -450,6 +520,15 @@
     },
     "not_supported": {
       "message": "Not supported by this device: {error}"
+    },
+    "risk_not_acknowledged": {
+      "message": "This action can cut the power on AC out 1 and AC out 2. Set acknowledge_risk to true to confirm that you accept this."
+    },
+    "entry_not_loaded": {
+      "message": "The Victron VE.Bus entry is not loaded."
+    },
+    "controls_disabled": {
+      "message": "This Victron VE.Bus entry is set up for monitoring only. Choose \"Monitor and control\" with Reconfigure to use this action."
     }
   },
   "issues": {
@@ -461,7 +540,7 @@
   "services": {
     "set_remote_panel_state": {
       "name": "Set remote panel state",
-      "description": "Sets the mode and optionally the AC input current limit, like a remote panel would.",
+      "description": "Sets the mode and optionally the AC input current limit, like a remote panel. Off, charger only, inverter only and a 0 A limit can cut the power on AC out 1 and AC out 2, so acknowledge_risk must be true.",
       "fields": {
         "mode": {
           "name": "Mode",
@@ -470,6 +549,14 @@
         "current_limit": {
           "name": "Current limit",
           "description": "AC input current limit in ampere. Leave empty to keep the current limit. With PowerAssist off, 0 puts the device in passthru."
+        },
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The Victron VE.Bus entry to control."
+        },
+        "acknowledge_risk": {
+          "name": "Acknowledge risk",
+          "description": "Must be true. Confirms that you accept that this can cut the power on the AC outputs."
         }
       }
     }
@@ -481,6 +568,36 @@
         "on": "On",
         "charger_only": "Charger only",
         "inverter_only": "Inverter only"
+      }
+    },
+    "setting": {
+      "options": {
+        "absorption_voltage": "Absorption voltage",
+        "float_voltage": "Float voltage",
+        "charge_current_limit": "Charge current limit",
+        "configured_ac_input_current_limit": "AC input current limit",
+        "configured_ac_input_2_current_limit": "AC input 2 current limit",
+        "solar_wind_priority_voltage": "Solar & wind priority voltage"
+      }
+    },
+    "flag": {
+      "options": {
+        "power_assist": "PowerAssist",
+        "weak_ac_input": "Weak AC input",
+        "ups_function": "UPS function",
+        "solar_wind_priority": "Solar & wind priority"
+      }
+    },
+    "passthru": {
+      "options": {
+        "enter": "Enter passthru (limit 0 A)",
+        "leave": "Leave passthru"
+      }
+    },
+    "usage": {
+      "options": {
+        "monitor": "Monitor only (recommended)",
+        "monitor_and_control": "Monitor and control"
       }
     }
   }

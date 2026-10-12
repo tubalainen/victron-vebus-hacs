@@ -17,7 +17,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
 from .entity import VeBusEntity
-from .vebus import Led, LedState, RamVar
+from .vebus import Led, LedState, RamVar, Setting, SettingFlag
 from .vebus.models import VeBusState
 
 PARALLEL_UPDATES = 0
@@ -72,6 +72,13 @@ LED_NAMES: dict[str, Led] = {
     "temperature": Led.TEMPERATURE,
 }
 
+
+def _ups_function(state: VeBusState) -> bool | None:
+    # UPS is on while the "disable wave check" bit is clear.
+    disabled = state.setting_flag(Setting.FLAGS_0, SettingFlag.DISABLE_WAVE_CHECK)
+    return None if disabled is None else not disabled
+
+
 BINARY_SENSORS: tuple[VeBusBinarySensorEntityDescription, ...] = (
     VeBusBinarySensorEntityDescription(
         key="ac_input_connected",
@@ -92,6 +99,33 @@ BINARY_SENSORS: tuple[VeBusBinarySensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_ram_bit(RamVar.IGNORE_AC_INPUT_STATE),
         exists_fn=_has_ram(RamVar.IGNORE_AC_INPUT_STATE),
+    ),
+    VeBusBinarySensorEntityDescription(
+        key="power_assist",
+        translation_key="power_assist",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda s: s.setting_flag(Setting.FLAGS_0, SettingFlag.ASSIST_ENABLED),
+        exists_fn=lambda c: (
+            c.client.state.settings_raw.get(Setting.FLAGS_0) is not None
+        ),
+    ),
+    VeBusBinarySensorEntityDescription(
+        key="weak_ac_input",
+        translation_key="weak_ac_input",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda s: s.setting_flag(Setting.FLAGS_0, SettingFlag.WEAK_AC_INPUT),
+        exists_fn=lambda c: (
+            c.client.state.settings_raw.get(Setting.FLAGS_0) is not None
+        ),
+    ),
+    VeBusBinarySensorEntityDescription(
+        key="ups_function",
+        translation_key="ups_function",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_ups_function,
+        exists_fn=lambda c: (
+            c.client.state.settings_raw.get(Setting.FLAGS_0) is not None
+        ),
     ),
     VeBusBinarySensorEntityDescription(
         key="remote_panel_detected",

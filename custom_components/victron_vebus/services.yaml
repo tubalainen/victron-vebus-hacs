@@ -1,9 +1,10 @@
 set_remote_panel_state:
-  target:
-    entity:
-      integration: victron_vebus
-      domain: select
   fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: victron_vebus
     mode:
       required: true
       selector:
@@ -23,3 +24,8 @@ set_remote_panel_state:
           step: 0.1
           unit_of_measurement: A
           mode: box
+    acknowledge_risk:
+      required: true
+      default: false
+      selector:
+        boolean:

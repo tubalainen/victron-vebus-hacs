@@ -9,6 +9,11 @@ MANUFACTURER: Final = "Victron Energy"
 DEFAULT_NAME: Final = "Victron VE.Bus"
 
 CONF_ENABLE_CONTROLS: Final = "enable_controls"
+# How the integration may be used, chosen when it is added or reconfigured.
+CONF_USAGE: Final = "usage"
+USAGE_MONITOR: Final = "monitor"
+USAGE_CONTROL: Final = "monitor_and_control"
+CONF_ACKNOWLEDGE: Final = "acknowledge"
 # Battery Operational Limits: once sent, the Multi stops charging and inverting
 # if they are not refreshed within 5 minutes, until it is restarted.
 CONF_ENABLE_BATTERY_LIMITS: Final = "enable_battery_limits"
@@ -36,3 +41,5 @@ SETUP_TIMEOUT: Final = 30
 SERVICE_SET_REMOTE_PANEL_STATE: Final = "set_remote_panel_state"
 ATTR_MODE: Final = "mode"
 ATTR_CURRENT_LIMIT: Final = "current_limit"
+ATTR_CONFIG_ENTRY_ID: Final = "config_entry_id"
+ATTR_ACKNOWLEDGE_RISK: Final = "acknowledge_risk"

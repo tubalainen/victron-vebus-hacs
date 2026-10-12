@@ -79,6 +79,7 @@ was used where it agrees with the specification.
 | **0.2** | Buttons to force absorption, float or equalise (`0x0E` 1/2/3, firmware ≥ 400). RAM-only setting changes via `0x37` flags 0x03 in a long-frame session, with read-back and the bit masks reported by `0x35`: absorption/float voltage, charge current, configured AC input limit, PowerAssist, weak AC input, UPS function. Solar and wind priority (settings 60 and 88, j9brown issue #14 and PR #15). Passthru (limit 0) stays available through the action. |
 | **0.3** | Address scan (stop after 3 misses) with one device per unit, linked to the system device. Per-unit values from RAM variables read at each unit's address, round-robin. System power totals over all units, and apparent power per phase. Quattro AC input 2 limit (setting 49, number of inputs from `F` 5). A RAM-variable fallback for devices without standard info frames, such as the Compact (j9brown issue #11). |
 | **0.4** (beta) | ESS: the assistant is found from RAM 128 (ESS id 5) on every phase master. The setpoint (per phase) is written with WriteRAMVar/WriteData under an *ESS external control* switch, refreshed at least every 10 s and reset to 0 W when control stops. Disable-charge and disable-feed-in switches. Battery Operational Limits (`F` 9) behind a separate, warned option. |
+| **0.5** (beta) | Safety. The user chooses *Monitor only* or *Monitor and control* when adding the integration and with Reconfigure; control needs an explicit warning to be confirmed. Everything that can cut the power on the AC outputs, restart the Multi, change charge voltages or write the EEPROM moved from dashboard entities to guided device actions in the options flow, each with a risk dialog and an "I understand" checkbox: mode, passthru, charge voltages and other settings (RAM or permanent), PowerAssist / weak AC / UPS, equalisation and restart (`F` 8). Permanent (EEPROM) writes via `0x37` flags 0x01, rate-limited to one per setting every 5 minutes. The remote panel action requires `acknowledge_risk`. Disclaimer in the README and the setup dialogs. |
 
 ## 5. Things to verify on real hardware
 
@@ -134,3 +135,12 @@ v0.4 adds these, verified only against the simulator:
   reply `0x87`) are sent with the same tag letter (X/Y/Z).
 - **Battery Operational Limits:** the reply is a `0x3C` frame echoing the limits; flag
   bit 7 reports missing information.
+
+v0.5 adds these, verified only against the simulator:
+
+- **Restart:** `F 08 00 00 00 00` restarts the device. The Multi's relays open, so the
+  AC outputs lose power; settings written in RAM are lost. The MK3 may need to be
+  re-addressed afterwards, which the client does on the next request.
+- **Permanent writes:** WriteViaID (`0x37`) with flags 0x01 (setting, without the
+  RAM-only bit) stores the value in the EEPROM. The spec does not say whether the
+  device restarts or whether every setting takes effect without one.

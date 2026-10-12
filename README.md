@@ -1,5 +1,15 @@
 # Victron VE.Bus (MK3) for Home Assistant
 
+> [!CAUTION]
+> **Disclaimer — use at your own risk.** This is an unofficial community project. It is
+> not made, endorsed or supported by Victron Energy. It is provided "as is", without any
+> warranty of any kind (see the [MIT license](LICENSE)). **The authors and contributors
+> take no responsibility whatsoever for any damage** to inverters, chargers, batteries,
+> other equipment or property, for injury, or for any other loss caused by using this
+> integration, its command line tool or this documentation. Controlling an
+> inverter/charger can cut the power to your loads and can damage batteries. If you are
+> not sure what a setting does, **do not change it**.
+
 A Home Assistant custom integration for Victron Energy VE.Bus inverter/chargers
 (MultiPlus, MultiPlus-II, Quattro, ...). It talks to the device directly through a
 **Victron MK3-USB interface**, so no GX device (Cerbo, Venus) is needed.
@@ -9,12 +19,10 @@ It is a ground-up rewrite inspired by
 project's known bugs and adds new features. See [docs/ANALYSIS.md](docs/ANALYSIS.md) for
 the analysis and the roadmap.
 
-> **Status:** v0.4 beta. It is developed and tested against a MultiPlus-II using a
-> protocol simulator, and has not yet been verified on real hardware. Treat the setting
-> controls (v0.2), the multi-unit, Quattro and Compact support (v0.3) and the ESS and
-> battery limit controls (v0.4) as beta: try
-> the controls with the command line tool first (see below), and please report your
-> results.
+> **Status:** v0.5 beta. It is developed and tested against a MultiPlus-II using a
+> protocol simulator, and has not yet been verified on real hardware. Treat everything
+> beyond monitoring as beta: try the controls with the command line tool first (see
+> below), and please report your results.
 
 ## Features
 
@@ -56,17 +64,21 @@ the analysis and the roadmap.
   read from RAM variables instead.
 - **Keep awake switch.** It stops a switched-off device from sleeping, which would cut
   the MK3's power.
-- **Optional controls** (off by default):
-  - mode select (on / off / charger only / inverter only)
-  - AC input current limit
-  - the `victron_vebus.set_remote_panel_state` action
-  - buttons to force absorption, float or equalise
-  - charger settings: absorption and float voltage, charge current, configured AC input
-    current limit (and AC input 2 on a Quattro)
-  - PowerAssist, weak AC input, UPS function and solar & wind priority switches, plus
-    the solar & wind priority voltage. Settings are changed in RAM only.
-  - ESS external control (needs the ESS assistant): the grid setpoint (per phase on
-    three-phase systems) plus disable charge and disable feed-in switches
+- **Monitor only, or monitor and control.** You choose this when you add the
+  integration and can change it with *Reconfigure*. *Monitor only* never changes how
+  the Multi operates.
+- **Controls** (only with *Monitor and control*):
+  - On the dashboard, for routine use and automations: the remote AC input current
+    limit, charge current limit, configured AC input limit(s), buttons to force
+    absorption or float, solar & wind priority, and ESS external control (grid
+    setpoint per phase, disable charge / feed-in).
+  - **Guided device actions** under *Configure → Device actions*, for everything that
+    can cut the power on the AC outputs, restart the Multi, change charge voltages or
+    write the EEPROM: mode, passthru, charge voltages and other settings (in RAM or
+    permanently), PowerAssist / weak AC input / UPS function, equalisation and restart.
+    Each action shows its risks in a dialog and must be confirmed.
+  - The `victron_vebus.set_remote_panel_state` action for automations, which requires
+    `acknowledge_risk: true`.
 - **Battery operational limits** (advanced, lithium only, separate option): the Multi
   receives charge/discharge voltage and current limits, like it would from a BMS.
 
@@ -86,13 +98,20 @@ the analysis and the roadmap.
 3. Plug in the MK3. Home Assistant should discover it. Otherwise go to *Settings →
    Devices & services → Add integration → Victron VE.Bus (MK3)*, then choose the serial
    port or enter a path or URL.
+4. Choose **Monitor only** (recommended to start with) or **Monitor and control**.
+   *Monitor and control* shows a warning you must confirm: **do not change any setting
+   if you are not sure what it does.** You can switch between the two later with
+   *Settings → Devices & services → Victron VE.Bus → ⋮ → Reconfigure*.
 
 ### Options
 
 | Option | Default | Description |
 |---|---|---|
 | Polling interval | 2 s | The MK3 runs at 2400 baud and a full poll takes about one second. |
-| Enable control entities | off | Adds the mode select, the AC input current limit number and the `set_remote_panel_state` action. |
+| Enable battery operational limits | off | Only with *Monitor and control*. See [Battery operational limits](#battery-operational-limits-advanced-beta). |
+
+Monitoring or control is not an option here: it is chosen when the integration is
+added, or with *Reconfigure*.
 
 ## Entities
 
@@ -124,13 +143,13 @@ settings.
 | AC input / output apparent power L1–L3 | Multi-phase systems only. Voltage × current per phase, from the info frames. |
 | *Unit N* AC input/output voltage, current and power; battery voltage, current and power; device state | Multi-unit systems only, one device per unit (*Victron VE.Bus unit N*). Units are read in turn, one per poll. |
 | ESS active setpoint (L1–L3) | Diagnostic, when the ESS assistant is installed. The setpoint the assistant uses; positive = taken from the grid. |
-| ESS external control (switch), ESS grid setpoint (L1–L3) (number), ESS disable charge / feed-in (switches) | Only with *Enable control entities* and the ESS assistant installed. See below. |
+| PowerAssist, Weak AC input, UPS function (binary sensors) | Diagnostic, read-only. Change them with the guided device actions. |
+| ESS external control (switch), ESS grid setpoint (L1–L3) (number), ESS disable charge / feed-in (switches) | *Monitor and control* with the ESS assistant installed. See below. |
 | Battery limit charge/discharge voltage/current (numbers) | Only with *Enable battery operational limits*; firmware 415+. See below. |
-| Remote mode (select), Remote AC input current limit (number) | Only with *Enable control entities*. |
-| Force absorption / float / equalise (buttons) | Only with *Enable control entities*; firmware 400+. |
-| Absorption voltage, Float voltage, Charge current limit, Configured AC input current limit (numbers) | Only with *Enable control entities*; firmware 412+. RAM only, see below. |
-| PowerAssist, Weak AC input, UPS function (switches) | Only with *Enable control entities*; firmware 412+. RAM only. |
-| Solar & wind priority (switch), Solar & wind priority voltage (number) | Only with *Enable control entities*; firmware 506+ and the feature configured. RAM only. |
+| Remote AC input current limit (number) | *Monitor and control*. The mode is changed with the guided device actions. |
+| Force absorption / float (buttons) | *Monitor and control*; firmware 400+. Equalisation is a guided device action. |
+| Charge current limit, Configured AC input (2) current limit (numbers) | *Monitor and control*; firmware 412+. RAM only. Charge voltages are guided device actions. |
+| Solar & wind priority (switch), Solar & wind priority voltage (number) | *Monitor and control*; firmware 506+ and the feature configured. RAM only. |
 
 ### Keep awake
 
@@ -140,24 +159,47 @@ awake** on (the default), the integration sets the MK3's *standby* flag, which k
 the device awake. It resends the flag on every poll because the flag is lost whenever
 the device loses power. A switched-off device that is kept awake uses a few watts more.
 
-### Controls and the remote panel action
+### Guided device actions (Configure → Device actions)
 
-The controls act like a Digital Multi Control remote panel:
+Everything that can cut the power on AC out 1 and AC out 2, restart the Multi, change
+battery charge voltages or write the EEPROM is only available here. Each action opens a
+dialog that lists its risks; nothing is sent until you tick *I understand the risks*
+and submit.
 
-- Changing the mode keeps the current input limit.
-- Changing the limit keeps the mode that is currently in effect.
-- The device clamps the limit to the min/max it reports.
-- Per the Victron documentation, a limit of 0 makes the device pass through (with
-  PowerAssist off) or invert (with PowerAssist on). The number entity respects the
-  device minimum; use the action to send 0.
+| Action | What can happen |
+|---|---|
+| **Restart the Multi** | The Multi restarts and its relays open: **AC out 1 and AC out 2 lose power** for several seconds. Settings changed in RAM are lost. |
+| **Mode: off** | **AC out 1 and AC out 2 lose power** until the mode is changed back. |
+| **Mode: charger only** | No inverter: the AC outputs **lose power on a grid failure**. |
+| **Mode: inverter only** | The Multi disconnects from the grid (relay switches); **AC out 2 loses power**; the battery discharges. |
+| **Mode: on** | Normal operation; if the Multi was off it starts and its relays click. |
+| **Passthru** (limit 0 A) | With PowerAssist off the charger stops and the grid is passed through; with PowerAssist on the Multi inverts from the battery instead. |
+| **Charger settings** | Wrong charge voltages or currents can damage the battery; too high an AC input limit can trip the grid breaker. |
+| **PowerAssist / weak AC / UPS** | PowerAssist off can trip the grid breaker under load; UPS off makes transfers slower, which **can interrupt the AC outputs** on a grid failure. |
+| **Equalisation** | Charges above the absorption voltage — never for lithium, gel or AGM batteries unless allowed by the manufacturer. |
+
+Charger settings and features can be changed **in RAM** (lost when the Multi restarts)
+or **permanently** in the EEPROM. Permanent writes replace the value set with
+VictronConnect or VEConfigure, are limited to one per setting every 5 minutes to protect
+the EEPROM, and should not be automated. Victron documents no restart for these writes
+and the integration does not restart the Multi, but some settings may only take full
+effect after the next restart.
+
+### The remote panel action (automations)
+
+`victron_vebus.set_remote_panel_state` sets the mode and optionally the AC input current
+limit, like a Digital Multi Control panel. Because modes other than *on* and a 0 A limit
+can cut the power on the AC outputs, the action fails unless `acknowledge_risk: true`,
+and it only works on an entry set up for *Monitor and control*.
+Changing the mode keeps the current limit when none is given.
 
 ```yaml
 action: victron_vebus.set_remote_panel_state
-target:
-  entity_id: select.victron_ve_bus_remote_mode
 data:
+  config_entry_id: 01J...   # pick the Victron VE.Bus entry in the UI editor
   mode: "on"
   current_limit: 10
+  acknowledge_risk: true
 ```
 
 These commands only change RAM in the device, not its EEPROM. They are lost when the
@@ -168,8 +210,9 @@ device restarts.
 
 ### Changing settings (beta)
 
-The setting numbers and switches change the device's settings **in RAM only**, never
-its stored (EEPROM) configuration. A change applies immediately and is lost when the
+The setting numbers and switches on the dashboard change the device's settings **in RAM
+only**, never its stored (EEPROM) configuration (only the guided device actions can
+write permanently). A change applies immediately and is lost when the
 device restarts, which then goes back to the configuration made with VictronConnect
 or VEConfigure. Because nothing is written to the EEPROM, automations can change these
 settings as often as needed without wearing it out.
@@ -193,8 +236,9 @@ What the switches do:
 - **Solar & wind priority off** makes the device charge the battery to the full
   absorption voltage again ("charge to 100%"). Switch it back on afterwards, or restart
   the device.
-- **UPS function off** sets the "disable wave check" flag, so the device is more
-  tolerant of a poor AC input (for example a generator) but switches over more slowly.
+- PowerAssist, weak AC input and UPS function are shown as read-only sensors; they are
+  changed with the guided device actions because they affect how the Multi transfers
+  between grid and inverter.
 
 Requirements:
 
@@ -231,8 +275,8 @@ assistant, no ESS entities are created.
 > minutes**, and keeps expecting them until it is restarted. Only enable this if Home
 > Assistant runs reliably, and restart the Multi after turning it off.
 
-The option *Enable battery operational limits* (which also needs *Enable control
-entities*, device firmware 415 and MK3 firmware 203) creates four numbers:
+The option *Enable battery operational limits* (which also needs *Monitor and
+control*, device firmware 415 and MK3 firmware 203) creates four numbers:
 
 - charge voltage and charge current limit
 - discharge voltage and discharge current limit (0 A stops discharging)
