@@ -89,6 +89,62 @@
       },
       "maximum_absorption_time": {
         "default": "mdi:timer-outline"
+      },
+      "led_mains": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on",
+          "blink": "mdi:led-variant-on"
+        }
+      },
+      "led_absorption": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on",
+          "blink": "mdi:led-variant-on"
+        }
+      },
+      "led_bulk": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on",
+          "blink": "mdi:led-variant-on"
+        }
+      },
+      "led_float": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on",
+          "blink": "mdi:led-variant-on"
+        }
+      },
+      "led_inverter": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on",
+          "blink": "mdi:led-variant-on"
+        }
+      },
+      "led_overload": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on",
+          "blink": "mdi:led-variant-on"
+        }
+      },
+      "led_low_battery": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on",
+          "blink": "mdi:led-variant-on"
+        }
+      },
+      "led_temperature": {
+        "default": "mdi:led-off",
+        "state": {
+          "on": "mdi:led-on",
+          "blink": "mdi:led-variant-on"
+        }
       }
     },
     "binary_sensor": {
@@ -106,54 +162,6 @@
       },
       "remote_panel_detected": {
         "default": "mdi:remote"
-      },
-      "led_mains": {
-        "default": "mdi:led-off",
-        "state": {
-          "on": "mdi:led-on"
-        }
-      },
-      "led_absorption": {
-        "default": "mdi:led-off",
-        "state": {
-          "on": "mdi:led-on"
-        }
-      },
-      "led_bulk": {
-        "default": "mdi:led-off",
-        "state": {
-          "on": "mdi:led-on"
-        }
-      },
-      "led_float": {
-        "default": "mdi:led-off",
-        "state": {
-          "on": "mdi:led-on"
-        }
-      },
-      "led_inverter": {
-        "default": "mdi:led-off",
-        "state": {
-          "on": "mdi:led-on"
-        }
-      },
-      "led_overload": {
-        "default": "mdi:led-off",
-        "state": {
-          "on": "mdi:led-on"
-        }
-      },
-      "led_low_battery": {
-        "default": "mdi:led-off",
-        "state": {
-          "on": "mdi:led-on"
-        }
-      },
-      "led_temperature": {
-        "default": "mdi:led-off",
-        "state": {
-          "on": "mdi:led-on"
-        }
       },
       "power_assist": {
         "default": "mdi:transmission-tower-export"

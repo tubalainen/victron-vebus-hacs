@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from homeassistant.core import HomeAssistant, State
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -256,3 +256,51 @@ async def test_status_sensors(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     assert state(f"sensor.{PREFIX}_charge_characteristic") == "fixed"
     assert float(state(f"sensor.{PREFIX}_maximum_absorption_time")) == 1
     assert state(f"binary_sensor.{PREFIX}_virtual_switch") == "off"
+
+
+# ---------------------------------------------------------------------------
+# LED sensors (0.6.0-beta2)
+
+
+async def test_led_sensors(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
+    """Each LED is a sensor showing off, on or blinking."""
+    coordinator = await _setup(hass, _entry())
+    entity_id = f"sensor.{PREFIX}_low_battery_led"
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == "off"
+    assert state.attributes["options"] == ["off", "on", "blink"]
+    entry = er.async_get(hass).async_get(entity_id)
+    assert entry is not None
+    assert entry.disabled_by is None
+    assert entry.entity_category is er.EntityCategory.DIAGNOSTIC
+
+    fake_mk3.device.leds_blink = 0x40
+    await _poll(coordinator, hass)
+    assert hass.states.get(entity_id).state == "blink"
+    assert hass.states.get(f"sensor.{PREFIX}_mains_led").state == "on"
+
+    # 0x1F/0x1F: the interface could not read the LEDs.
+    fake_mk3.device.leds_on = fake_mk3.device.leds_blink = 0x1F
+    await _poll(coordinator, hass)
+    assert hass.states.get(f"sensor.{PREFIX}_mains_led").state == "unknown"
+    assert hass.states.get(entity_id).state == "unknown"
+    assert (
+        hass.states.get(f"binary_sensor.{PREFIX}_ac_input_connected").state == "unknown"
+    )
+
+
+async def test_led_binary_sensors_removed(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """The LED binary sensors of earlier versions are removed."""
+    entry = _entry()
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    old = registry.async_get_or_create(
+        "binary_sensor", DOMAIN, "HQ123_0_led_mains", config_entry=entry
+    ).entity_id
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert registry.async_get(old) is None
+    assert registry.async_get(f"sensor.{PREFIX}_mains_led") is not None

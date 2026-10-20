@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -29,7 +28,6 @@ class VeBusBinarySensorEntityDescription(BinarySensorEntityDescription):
 
     value_fn: Callable[[VeBusState], bool | None]
     exists_fn: Callable[[VeBusCoordinator], bool] = lambda _: True
-    led: Led | None = None
 
 
 def _ram_bit(var: RamVar) -> Callable[[VeBusState], bool | None]:
@@ -44,33 +42,12 @@ def _has_ram(var: RamVar) -> Callable[[VeBusCoordinator], bool]:
     return lambda coordinator: coordinator.client.ram_var_info.get(var) is not None
 
 
-def _led(led: Led) -> Callable[[VeBusState], bool | None]:
-    def value(state: VeBusState) -> bool | None:
-        if state.leds is None:
-            return None
-        return state.leds.state(led) is not LedState.OFF
-
-    return value
-
-
 def _ac_input_connected(state: VeBusState) -> bool | None:
     # The mains LED is lit while the AC input relay is closed and blinks while
     # AC is present but the device has not connected to it (yet).
-    if state.leds is None:
+    if state.leds is None or not state.leds.known:
         return None
     return state.leds.state(Led.MAINS) is LedState.ON
-
-
-LED_NAMES: dict[str, Led] = {
-    "mains": Led.MAINS,
-    "absorption": Led.ABSORPTION,
-    "bulk": Led.BULK,
-    "float": Led.FLOAT,
-    "inverter": Led.INVERTER,
-    "overload": Led.OVERLOAD,
-    "low_battery": Led.LOW_BATTERY,
-    "temperature": Led.TEMPERATURE,
-}
 
 
 def _ups_function(state: VeBusState) -> bool | None:
@@ -141,17 +118,6 @@ BINARY_SENSORS: tuple[VeBusBinarySensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=lambda s: s.config.remote_panel_detected if s.config else None,
     ),
-    *(
-        VeBusBinarySensorEntityDescription(
-            key=f"led_{name}",
-            translation_key=f"led_{name}",
-            entity_category=EntityCategory.DIAGNOSTIC,
-            entity_registry_enabled_default=False,
-            value_fn=_led(led),
-            led=led,
-        )
-        for name, led in LED_NAMES.items()
-    ),
 )
 
 
@@ -178,12 +144,3 @@ class VeBusBinarySensor(VeBusEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         """Return the state of the sensor."""
         return self.entity_description.value_fn(self.coordinator.data)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Report whether an LED is blinking."""
-        led = self.entity_description.led
-        leds = self.coordinator.data.leds
-        if led is None or leds is None:
-            return None
-        return {"blinking": leds.state(led) is LedState.BLINK}

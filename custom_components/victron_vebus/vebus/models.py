@@ -148,12 +148,24 @@ class AcInfo:
     raw_device_state: int
 
 
+# Both LED bytes of an 'L' reply when the interface cannot read the LEDs.
+UNKNOWN_LEDS = 0x1F
+
+
 @dataclass(frozen=True, slots=True)
 class LedInfo:
     """LED status (section 4)."""
 
     on: Led
     blink: Led
+
+    @property
+    def known(self) -> bool:
+        """Return False if the interface could not determine the LEDs.
+
+        The MK2/MK3 then reports 0x1F for both bytes (section 4).
+        """
+        return not (self.on == UNKNOWN_LEDS and self.blink == UNKNOWN_LEDS)
 
     def state(self, led: Led) -> LedState:
         """Return the state of a single LED."""

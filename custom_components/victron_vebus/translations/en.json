@@ -395,6 +395,70 @@
       },
       "maximum_absorption_time": {
         "name": "Maximum absorption time"
+      },
+      "led_mains": {
+        "name": "Mains LED",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "blink": "Blinking"
+        }
+      },
+      "led_absorption": {
+        "name": "Absorption LED",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "blink": "Blinking"
+        }
+      },
+      "led_bulk": {
+        "name": "Bulk LED",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "blink": "Blinking"
+        }
+      },
+      "led_float": {
+        "name": "Float LED",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "blink": "Blinking"
+        }
+      },
+      "led_inverter": {
+        "name": "Inverter LED",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "blink": "Blinking"
+        }
+      },
+      "led_overload": {
+        "name": "Overload LED",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "blink": "Blinking"
+        }
+      },
+      "led_low_battery": {
+        "name": "Low battery LED",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "blink": "Blinking"
+        }
+      },
+      "led_temperature": {
+        "name": "Temperature LED",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "blink": "Blinking"
+        }
       }
     },
     "binary_sensor": {
@@ -409,70 +473,6 @@
       },
       "remote_panel_detected": {
         "name": "Remote panel detected"
-      },
-      "led_mains": {
-        "name": "Mains LED",
-        "state_attributes": {
-          "blinking": {
-            "name": "Blinking"
-          }
-        }
-      },
-      "led_absorption": {
-        "name": "Absorption LED",
-        "state_attributes": {
-          "blinking": {
-            "name": "Blinking"
-          }
-        }
-      },
-      "led_bulk": {
-        "name": "Bulk LED",
-        "state_attributes": {
-          "blinking": {
-            "name": "Blinking"
-          }
-        }
-      },
-      "led_float": {
-        "name": "Float LED",
-        "state_attributes": {
-          "blinking": {
-            "name": "Blinking"
-          }
-        }
-      },
-      "led_inverter": {
-        "name": "Inverter LED",
-        "state_attributes": {
-          "blinking": {
-            "name": "Blinking"
-          }
-        }
-      },
-      "led_overload": {
-        "name": "Overload LED",
-        "state_attributes": {
-          "blinking": {
-            "name": "Blinking"
-          }
-        }
-      },
-      "led_low_battery": {
-        "name": "Low battery LED",
-        "state_attributes": {
-          "blinking": {
-            "name": "Blinking"
-          }
-        }
-      },
-      "led_temperature": {
-        "name": "Temperature LED",
-        "state_attributes": {
-          "blinking": {
-            "name": "Blinking"
-          }
-        }
       },
       "power_assist": {
         "name": "PowerAssist"
