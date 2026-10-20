@@ -143,7 +143,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: VeBusConfigEntry) -> bo
     """Unload a config entry."""
     coordinator = entry.runtime_data.coordinator
     await coordinator.async_release()
-    coordinator.async_clear_alarm_issues()
+    coordinator.async_clear_issues()
     return await hass.config_entries.async_unload_platforms(
         entry, entry.runtime_data.platforms
     )

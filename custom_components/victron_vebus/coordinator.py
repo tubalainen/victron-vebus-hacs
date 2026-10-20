@@ -20,8 +20,13 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     ESS_REFRESH_INTERVAL,
+    LINK_ISSUE_BELOW,
+    LINK_ISSUE_CLEAR,
+    LINK_ISSUE_MIN_REQUESTS,
+    LINK_QUALITY_WINDOW,
     UNAVAILABLE_ISSUE_DELAY,
 )
+from .health import LinkQuality
 from .vebus import (
     AlarmState,
     DeviceIdentity,
@@ -32,6 +37,7 @@ from .vebus import (
     VeBusClient,
     VeBusError,
     VeBusState,
+    VeBusTimeoutError,
 )
 from .vebus.const import (
     MIN_FIRMWARE_RAM_ONLY_WRITE,
@@ -105,6 +111,8 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         # Last known level of each alarm, and who wants to hear of changes.
         self.alarms: dict[str, AlarmState] = {}
         self._alarm_listeners: list[AlarmListener] = []
+        self.link = LinkQuality(window=LINK_QUALITY_WINDOW)
+        self._link_issue = False
         self.data = client.state
 
     async def _async_update_data(self) -> VeBusState:
@@ -284,10 +292,11 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         return f"{alarm}_alarm_{self.config_entry.entry_id}"
 
     @callback
-    def async_clear_alarm_issues(self) -> None:
-        """Remove the alarm issues, e.g. when the entry is unloaded."""
+    def async_clear_issues(self) -> None:
+        """Remove the alarm and link issues, e.g. when the entry is unloaded."""
         for alarm in ALARM_LEDS:
             ir.async_delete_issue(self.hass, DOMAIN, self._alarm_issue_id(alarm))
+        ir.async_delete_issue(self.hass, DOMAIN, self._link_issue_id)
 
     async def async_release(self) -> None:
         """Hand ESS control back to the device before unloading."""
@@ -316,8 +325,50 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
             _LOGGER.info("VE.Bus device on %s is available again", self.client.url)
             self._unavailable_since = None
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
+        self._async_check_link()
         self._async_check_alarms(state)
         self.async_set_updated_data(state)
+
+    @callback
+    def _async_check_link(self) -> None:
+        """Track the link quality and raise an issue while it is poor."""
+        stats = self.client.stats
+        self.link.add(time.monotonic(), stats.requests, stats.timeouts)
+        rate = self.link.success_rate
+        if rate is None:
+            return
+        if (
+            not self._link_issue
+            and rate < LINK_ISSUE_BELOW
+            and self.link.requests >= LINK_ISSUE_MIN_REQUESTS
+        ):
+            _LOGGER.warning(
+                "Only %s%% of the requests to %s were answered in the last %s minutes",
+                rate,
+                self.client.url,
+                LINK_QUALITY_WINDOW // 60,
+            )
+            self._link_issue = True
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                self._link_issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="poor_link",
+                translation_placeholders={
+                    "name": self.config_entry.title,
+                    "device": self.client.url,
+                    "rate": f"{rate:g}",
+                },
+            )
+        elif self._link_issue and rate >= LINK_ISSUE_CLEAR:
+            self._link_issue = False
+            ir.async_delete_issue(self.hass, DOMAIN, self._link_issue_id)
+
+    @property
+    def _link_issue_id(self) -> str:
+        return f"poor_link_{self.config_entry.entry_id}"
 
     @callback
     def _async_on_unavailable(self, err: Exception) -> None:
@@ -340,6 +391,7 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
                     "error": str(err),
                 },
             )
+        self._async_check_link()
         self.async_set_update_error(err)
 
     @property
@@ -347,6 +399,15 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         return f"device_unreachable_{self.config_entry.entry_id}"
 
     async def async_refresh_config(self) -> None:
-        """Re-read mode and current limit after a control command."""
-        state = await self.client.refresh_config()
+        """Re-read mode and current limit after a control command.
+
+        The command itself was already acknowledged. If the device is still
+        busy switching and does not answer in time, the next poll reads the
+        new state instead.
+        """
+        try:
+            state = await self.client.refresh_config()
+        except VeBusTimeoutError as err:
+            _LOGGER.debug("Re-reading the mode after a command failed: %s", err)
+            return
         self.async_set_updated_data(state)
