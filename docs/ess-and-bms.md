@@ -28,7 +28,8 @@ assistant, no ESS entities are created.
 > **Warning.** This is a BMS function for lithium batteries. Once the Multi has
 > received battery limits, it **stops charging and inverting if it receives none for 5
 > minutes**, and keeps expecting them until it is restarted. Only enable this if Home
-> Assistant runs reliably, and restart the Multi after turning it off.
+> Assistant runs reliably, and restart the Multi after turning it off. **A restart power
+> cycles every device connected to AC out 1 and AC out 2.**
 
 The option *Enable battery operational limits* (which also needs *Monitor and
 control*, device firmware 415 and MK3 firmware 203) creates four numbers:
@@ -39,4 +40,4 @@ control*, device firmware 415 and MK3 firmware 203) creates four numbers:
 The limits are sent on every poll. They start from the device's absorption voltage and
 charge current, 0 V and 1000 A, and keep their values across restarts. Turning the
 option off asks for confirmation, because the Multi must then be restarted within
-5 minutes.
+5 minutes, which power cycles every device on AC out 1 and AC out 2.

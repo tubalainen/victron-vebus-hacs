@@ -49,7 +49,7 @@ tap_action:
   target:
     entity_id: button.victron_ve_bus_restart_the_multi
   confirmation:
-    text: Restarting cuts the power on AC out 1 and AC out 2 for several seconds. Continue?
+    text: Restarting power cycles every device on AC out 1 and AC out 2. Continue?
 ```
 
 For automations and scripts, see [Actions](actions.md).
@@ -65,7 +65,7 @@ submit. Charger settings and features can be written in RAM or permanently here 
 
 | Action | What can happen |
 |---|---|
-| **Restart the Multi** | The Multi restarts and its relays open: **AC out 1 and AC out 2 lose power** for several seconds. Settings changed in RAM are lost. |
+| **Restart the Multi** | The Multi restarts and its relays open: **AC out 1 and AC out 2 lose power** for several seconds, so **every device connected to them is power cycled** (switched off and on again). Settings changed in RAM are lost. |
 | **Mode: off** | **AC out 1 and AC out 2 lose power** until the mode is changed back. |
 | **Mode: charger only** | No inverter: the AC outputs **lose power on a grid failure**. |
 | **Mode: inverter only** | The Multi disconnects from the grid (relay switches); **AC out 2 loses power**; the battery discharges. |
@@ -80,7 +80,8 @@ or **permanently** in the EEPROM. Permanent writes replace the value set with
 VictronConnect or VEConfigure, are limited to one per setting every 5 minutes to protect
 the EEPROM, and should not be automated. Victron documents no restart for these writes
 and the integration does not restart the Multi, but some settings may only take full
-effect after the next restart.
+effect after the next restart. **A restart power cycles every device on AC out 1 and AC
+out 2**, so choose a convenient moment for it.
 
 ## Changing settings (beta)
 

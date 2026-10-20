@@ -52,7 +52,7 @@
       },
       "control_warning": {
         "title": "⚠️ Read this before enabling control",
-        "description": "**DO NOT CHANGE ANY SETTING IF YOU ARE NOT SURE WHAT IT DOES.**\n\nWrong settings can cut the power on AC out 1 and AC out 2, stop the battery from charging, or damage the battery, the Multi and connected equipment.\n\n- Critical changes (mode, passthru, restart, charge voltages, PowerAssist, UPS function, equalisation, permanent settings) are only offered under *Configure → Device actions*. Each shows its risks and must be confirmed.\n- Some actions restart the Multi or switch its relays: **AC out 1 and AC out 2 then lose power.**\n- By default settings change in the Multi's RAM only and return to the stored configuration when it restarts.\n\n**Disclaimer:** this is an unofficial community integration. It is not made, endorsed or supported by Victron Energy. It is provided as is, without any warranty. The authors and contributors take **no responsibility whatsoever** for any damage to equipment, batteries or property, for injury, or for any other loss caused by using it. You use it entirely at your own risk.",
+        "description": "**DO NOT CHANGE ANY SETTING IF YOU ARE NOT SURE WHAT IT DOES.**\n\nWrong settings can cut the power on AC out 1 and AC out 2, stop the battery from charging, or damage the battery, the Multi and connected equipment.\n\n- Critical changes (mode, passthru, restart, charge voltages, PowerAssist, UPS function, equalisation, saving settings permanently) are locked. They work after turning on *Allow critical changes* on the device page (it turns itself off again after 10 minutes), in the guided *Configure → Device actions* dialog, or in actions with `acknowledge_risk: true`. Each shows its risks.\n- Restarting the Multi, or switching its relays, cuts the power on AC out 1 and AC out 2: **every device connected to them is switched off and on again (power cycled).**\n- By default settings change in the Multi's RAM only and return to the stored configuration when it restarts.\n\n**Disclaimer:** this is an unofficial community integration. It is not made, endorsed or supported by Victron Energy. It is provided as is, without any warranty. The authors and contributors take **no responsibility whatsoever** for any damage to equipment, batteries or property, for injury, or for any other loss caused by using it. You use it entirely at your own risk.",
         "data": {
           "acknowledge": "I understand: I will not change settings I am not sure about, and I accept full responsibility for what I change"
         }
@@ -74,7 +74,7 @@
     "step": {
       "disable_battery_limits": {
         "title": "Turn off battery operational limits",
-        "description": "The Multi keeps expecting battery limits until it restarts. Once Home Assistant stops sending them, **the Multi stops charging and inverting after 5 minutes**. Restart the Multi (switch it off and on) within 5 minutes after confirming, or leave this option on."
+        "description": "The Multi keeps expecting battery limits until it restarts. Once Home Assistant stops sending them, **the Multi stops charging and inverting after 5 minutes**. Restart the Multi (switch it off and on) within 5 minutes after confirming, or leave this option on.\n\n**A restart power cycles every device connected to AC out 1 and AC out 2.** Turn this option off only at a moment when that is acceptable."
       },
       "init": {
         "title": "Victron VE.Bus",
@@ -92,7 +92,7 @@
         "data_description": {
           "scan_interval": "Seconds between polls. At 2400 baud one poll takes about a second.",
           "alarm_issues": "Raise a repair issue while the Multi reports an overload, low battery or temperature alarm. Warnings (pre-alarms) and alarms are always available as events of the Alarm entity.",
-          "enable_battery_limits": "Advanced, lithium batteries only. Creates four numbers whose limits are sent to the Multi on every poll, like a battery management system. WARNING: once the Multi has received limits, it stops charging AND inverting if it gets none for 5 minutes, and keeps expecting them until it is restarted. Needs device firmware 415 or later."
+          "enable_battery_limits": "Advanced, lithium batteries only. Creates four numbers whose limits are sent to the Multi on every poll, like a battery management system. WARNING: once the Multi has received limits, it stops charging AND inverting if it gets none for 5 minutes, and keeps expecting them until it is restarted (a restart power cycles AC out 1 and AC out 2). Needs device firmware 415 or later."
         },
         "title": "Integration settings",
         "description": "Monitoring or control is chosen when the integration is added, or with *Reconfigure*."
@@ -807,7 +807,7 @@
     },
     "restart": {
       "name": "Restart the Multi",
-      "description": "Restarts the Multi. Its relays open, so AC out 1 and AC out 2 lose power for several seconds, and settings changed in RAM are lost.",
+      "description": "Restarts the Multi. Its relays open, so AC out 1 and AC out 2 lose power for several seconds and every device connected to them is power cycled. Settings changed in RAM are lost.",
       "fields": {
         "config_entry_id": {
           "name": "Device",
