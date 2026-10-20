@@ -19,10 +19,12 @@ It is a ground-up rewrite inspired by
 project's known bugs and adds new features. See [docs/ANALYSIS.md](docs/ANALYSIS.md) for
 the analysis and the roadmap.
 
-> **Status:** v0.7 beta. It is developed and tested against a MultiPlus-II using a
-> protocol simulator, and has not yet been verified on real hardware. Treat everything
-> beyond monitoring as beta: try the controls with the command line tool first (see
-> below), and please report your results.
+> **Status:** v1.0. Monitoring and mode changes are in daily use on a MultiPlus-II with
+> an MK3-USB. Some protocol details (the ESS setpoint, battery operational limits,
+> restart, permanent writes, multi-unit systems) have only been tested against a
+> protocol simulator so far; they are listed in [docs/ANALYSIS.md](docs/ANALYSIS.md) §5
+> and the sections below are marked *beta*. Try new controls with the command line tool
+> first (see below), and please report your results.
 
 ## Features
 
@@ -418,7 +420,9 @@ Bump `version` in `custom_components/victron_vebus/manifest.json` (e.g. `0.2.0`)
 pull request and merge it to `main`. That's all: the release workflow sees the new
 version, creates the `v0.2.0` tag on the merge commit, publishes the GitHub release with
 generated notes and attaches `victron_vebus.zip`. HACS then offers the new version as
-an update. Versions with a suffix such as `0.2.0-beta1` become pre-releases.
+an update. Versions with a suffix such as `0.2.0-beta1` become pre-releases. To give a
+release its own text, add `docs/releases/vX.Y.Z.md` in the same pull request; the
+generated notes are added below it.
 
 Pushing a `vX.Y.Z` tag by hand, or publishing a release in the GitHub UI, also works.
 The workflow then only checks that the tag matches the manifest version and attaches

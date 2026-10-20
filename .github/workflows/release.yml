@@ -3,8 +3,9 @@ name: Release
 # A release is created automatically when a new version reaches main: bump
 # "version" in custom_components/victron_vebus/manifest.json and merge. The
 # workflow then creates the vX.Y.Z tag and the GitHub release with generated
-# notes and victron_vebus.zip attached. Versions containing a "-" (0.2.0-beta1)
-# are published as pre-releases. Pushing a v* tag by hand, or publishing a
+# notes and victron_vebus.zip attached. If docs/releases/vX.Y.Z.md exists, it
+# is the release text and the generated notes are added below it. Versions
+# containing a "-" (0.2.0-beta1) are published as pre-releases. Pushing a v* tag by hand, or publishing a
 # release in the GitHub UI, still works and gets the zip attached.
 
 on:
@@ -46,6 +47,8 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           if [[ "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
           echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+          notes="docs/releases/${tag}.md"
+          if [[ -f "$notes" ]]; then echo "body_path=${notes}" >> "$GITHUB_OUTPUT"; fi
 
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             # Tag pushed or release published by hand: the tag must match.
@@ -73,6 +76,7 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: ${{ steps.version.outputs.tag }}
+          body_path: ${{ steps.version.outputs.body_path }}
           generate_release_notes: true
           prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           files: victron_vebus.zip
