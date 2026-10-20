@@ -22,7 +22,8 @@ DEFAULT_CURRENT_LIMIT = 16.0
 RESTART_WARNING = f"""**The Multi restarts.**
 
 - Its relays open while it restarts: **{OUTPUTS} lose power** for several \
-seconds, until the Multi has started and connected again.
+seconds, until the Multi has started and connected again: **every device \
+connected to them is switched off and on again (power cycled).**
 - Settings changed in RAM by this integration are lost; the configuration stored \
 in the Multi is used again. The remote mode and current limit are reset.
 - If the Multi cannot start (for example because the battery is too low), the AC \
@@ -133,9 +134,10 @@ VEConfigure.
 integration allows one permanent write per setting every \
 {MIN_PERSISTENT_WRITE_INTERVAL // 60} minutes."""
 
-NO_RESTART_NOTE = """Victron documents no restart for this command and the \
+NO_RESTART_NOTE = f"""Victron documents no restart for this command and the \
 integration does not restart the Multi. Some settings may only take full effect \
-after the next restart."""
+after the next restart. A restart power cycles every device on {OUTPUTS}, so \
+choose a convenient moment for it."""
 
 
 @dataclass(frozen=True)
@@ -198,7 +200,10 @@ FLAG_RISKS: dict[tuple[SettingFlag, bool], str] = {
 EQUALISE_RISK = (
     "charging above the absorption voltage can damage lithium, gel and AGM batteries"
 )
-RESTART_RISK = f"the relays open and {OUTPUTS} lose power for several seconds"
+RESTART_RISK = (
+    f"the relays open and {OUTPUTS} lose power for several seconds; every connected "
+    "device is power cycled"
+)
 SAVE_RISK = "the changed settings replace the stored configuration (EEPROM)"
 
 
