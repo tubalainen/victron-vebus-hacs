@@ -63,7 +63,7 @@
   - **Routine controls:** the remote AC input current limit, charge current limit,
     configured AC input limit(s), force absorption or float, solar & wind priority, and
     ESS external control (grid setpoint per phase, disable charge / feed-in).
-  - **Critical controls**, behind the *Allow critical changes* lock: mode, passthru,
+  - **Critical controls**, behind the *Allow critical changes* lock: mode, stop grid charging (passthru),
     absorption and float voltage, PowerAssist, weak AC input, UPS function,
     equalisation, restart and *Save settings permanently*.
   - **Actions for automations:** `set_mode`, `set_setting`, `set_feature`, `equalise`,

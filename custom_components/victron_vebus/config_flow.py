@@ -334,7 +334,7 @@ class VeBusConfigFlow(ConfigFlow, domain=DOMAIN):
 class VeBusOptionsFlow(OptionsFlowWithReload):
     """Options of the integration and guided device actions.
 
-    Critical actions (restart, mode, passthru, settings, equalise) are only
+    Critical actions (restart, mode, stop grid charging, settings, equalise) are only
     available here: each one shows its risks and needs to be confirmed.
     """
 
@@ -489,13 +489,13 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
     async def async_step_action_passthru(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Enter or leave passthru."""
+        """Stop or resume charging from the grid (passthru, 0 A limit)."""
         coordinator = self._coordinator
         if user_input is not None:
             if user_input["passthru"] == "enter":
                 return await self._async_confirm(
                     PendingAction(
-                        "Enter passthru",
+                        "Stop grid charging",
                         passthru_warning(coordinator),
                         lambda: actions.async_set_passthru(coordinator, True, None),
                     )
@@ -503,7 +503,7 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
             limit = float(user_input["current_limit"])
             return await self._async_confirm(
                 PendingAction(
-                    "Leave passthru",
+                    "Resume grid charging",
                     PASSTHRU_LEAVE_WARNING.format(limit=f"{limit:g}"),
                     lambda: actions.async_set_passthru(coordinator, False, limit),
                 )

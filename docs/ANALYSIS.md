@@ -85,6 +85,7 @@ was used where it agrees with the specification.
 | **1.0** | First stable release: the features of 0.1–0.7. Monitoring and mode changes are in use on a MultiPlus-II; the items below are still verified only against the simulator. |
 | **1.1** | Every control usable in Home Assistant itself. Critical changes (mode select, passthru, PowerAssist / weak AC / UPS switches, absorption and float voltage, equalise, restart, save) are entities behind an "Allow critical changes" switch that turns itself off after 10 minutes. Entity changes go to RAM; "Save settings permanently" stores the settings changed since the last restart or save (tracked by the client, cleared on restart and boot frames). Actions `set_mode`, `set_setting`, `set_feature`, `equalise`, `restart`, `save_settings` with `acknowledge_risk`. Passthru is remembered because the device may report its minimum limit instead of 0 A; a mode change in passthru keeps 0 A. |
 | **1.1.1** | Texts only: every warning that mentions a restart says that it power cycles every device on AC out 1 and AC out 2, including turning off battery operational limits; the "Monitor and control" setup warning describes the 1.1 lock instead of the guided dialog only. |
+| **1.1.2** | Texts only: the *Passthru* switch and dialog are renamed *Stop grid charging (0 A)*, because "passthru" was mistaken for normal operation (the device state shows Victron's normal grid-through state as passthru). Keys, actions and existing entity IDs are unchanged. |
 
 ## 5. Things to verify on real hardware
 

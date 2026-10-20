@@ -1,8 +1,9 @@
 """Switches for the Victron VE.Bus integration.
 
 The keep awake switch, and with controls enabled: "Allow critical changes",
-passthru, and switches for flag settings that are changed in RAM only (a
-device restart restores its configuration until it is saved permanently).
+stop grid charging (passthru), and switches for flag settings that are
+changed in RAM only (a device restart restores its configuration until it is
+saved permanently).
 """
 
 from __future__ import annotations
@@ -236,7 +237,7 @@ class VeBusFlagSwitch(VeBusEntity, SwitchEntity):
 class VeBusAllowCriticalSwitch(VeBusEntity, SwitchEntity):
     """Allows critical changes for 10 minutes, then turns itself off.
 
-    Critical entities (mode, passthru, charge voltages, PowerAssist, weak AC
+    Critical entities (mode, stop grid charging, charge voltages, PowerAssist, weak AC
     input, UPS, equalisation, restart and saving permanently) refuse changes
     while it is off. It always starts off.
     """
@@ -267,7 +268,10 @@ class VeBusAllowCriticalSwitch(VeBusEntity, SwitchEntity):
 
 
 class VeBusPassthruSwitch(VeBusEntity, SwitchEntity, RestoreEntity):
-    """Passthru: the remote AC input current limit at 0 A (critical).
+    """Stop grid charging: the remote AC input current limit at 0 A (critical).
+
+    Victron calls this passthru: the charger stops and the grid is passed
+    straight through. Normal operation (mode on) does not need it.
 
     The device may report its minimum limit instead of 0 A, so the state is
     what was requested; it is restored after a Home Assistant restart.
@@ -304,7 +308,9 @@ class VeBusPassthruSwitch(VeBusEntity, SwitchEntity, RestoreEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enter passthru."""
-        self.coordinator.require_critical_allowed("Passthru on", actions.PASSTHRU_RISK)
+        self.coordinator.require_critical_allowed(
+            "Stop grid charging on", actions.PASSTHRU_RISK
+        )
         await self.async_device_call(
             actions.async_set_passthru(self.coordinator, True, None)
         )
@@ -313,7 +319,7 @@ class VeBusPassthruSwitch(VeBusEntity, SwitchEntity, RestoreEntity):
         """Leave passthru with the last current limit."""
         coordinator = self.coordinator
         coordinator.require_critical_allowed(
-            "Passthru off", actions.PASSTHRU_LEAVE_RISK
+            "Stop grid charging off", actions.PASSTHRU_LEAVE_RISK
         )
         limit = (
             coordinator.last_current_limit

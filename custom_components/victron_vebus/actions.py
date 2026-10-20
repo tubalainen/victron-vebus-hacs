@@ -53,19 +53,20 @@ transfer).
 its relays click when it connects to the grid.""",
 }
 
-PASSTHRU_ENTER_WARNING = f"""**Passthru: the remote AC input current limit is set \
-to 0 A.**
+PASSTHRU_ENTER_WARNING = f"""**Stop grid charging: the remote AC input current limit \
+is set to 0 A** (Victron calls this passthru).
 
 - With PowerAssist **off**, the charger stops and the grid is passed straight \
 through to {OUTPUTS}. On a grid failure the inverter takes over, if the mode \
 allows it.
 - Some firmware returns to charging after about 15 seconds (j9brown issue #9).
-- Leave passthru with the same action, or by setting the remote current limit."""
+- Resume grid charging with the same action, or by setting the remote current \
+limit. This is not needed for normal operation (mode *on*)."""
 
 PASSTHRU_POWER_ASSIST_WARNING = """**PowerAssist is on.** With PowerAssist on, a \
-0 A limit does not give passthru: **the Multi supplies the loads from the battery** \
-(it inverts) while the grid is connected. Turn PowerAssist off first if you want \
-passthru."""
+0 A limit does not just pass the grid through: **the Multi supplies the loads from \
+the battery** (it inverts) while the grid is connected. Turn PowerAssist off first \
+if you only want to stop charging from the grid."""
 
 PASSTHRU_LEAVE_WARNING = """**The remote AC input current limit is set to {limit} A.**
 
@@ -267,7 +268,7 @@ async def async_set_mode(coordinator: VeBusCoordinator, mode: Mode) -> str:
 async def async_set_passthru(
     coordinator: VeBusCoordinator, enter: bool, limit: float | None
 ) -> str:
-    """Enter passthru (limit 0) or leave it (restore a limit)."""
+    """Stop grid charging (passthru, limit 0) or resume it (restore a limit)."""
     config = coordinator.data.config
     mode = config.mode if config is not None and config.mode else Mode.ON
     current = 0.0 if enter else limit
@@ -275,8 +276,8 @@ async def async_set_passthru(
     coordinator.passthru = enter
     await coordinator.async_refresh_config()
     if enter:
-        return "The remote AC input current limit was set to 0 A."
-    return f"The remote AC input current limit was set to {limit} A."
+        return "Charging from the grid was stopped (AC input current limit 0 A)."
+    return f"Charging from the grid was resumed with an AC input limit of {limit} A."
 
 
 async def async_write_setting(

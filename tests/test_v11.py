@@ -7,6 +7,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import (
@@ -107,7 +108,7 @@ async def test_no_critical_entities_when_monitoring(
     for entity_id in (
         LOCK,
         MODE,
-        f"switch.{PREFIX}_passthru",
+        f"switch.{PREFIX}_stop_grid_charging_0_a",
         f"switch.{PREFIX}_powerassist",
         f"number.{PREFIX}_absorption_voltage",
         f"button.{PREFIX}_restart_the_multi",
@@ -144,7 +145,7 @@ async def test_mode_select(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
 async def test_passthru_switch(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     """Passthru sets 0 A and turning it off restores the last limit."""
     await _setup(hass)
-    entity_id = f"switch.{PREFIX}_passthru"
+    entity_id = f"switch.{PREFIX}_stop_grid_charging_0_a"
     assert _state(hass, entity_id) == "off"
     await _refused(hass, "switch", "turn_on", {"entity_id": entity_id})
 
@@ -343,3 +344,28 @@ async def test_actions_need_control(hass: HomeAssistant, fake_mk3: FakeMK3) -> N
         )
     assert err.value.translation_key == "controls_disabled"
     assert fake_mk3.device.resets == 0
+
+
+async def test_renamed_switch_keeps_entity_id(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """Existing installs keep switch.*_passthru after the rename (1.1.2)."""
+    entry = _entry()
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    old = registry.async_get_or_create(
+        "switch",
+        DOMAIN,
+        "HQ123_0_passthru",
+        config_entry=entry,
+        suggested_object_id=f"{PREFIX}_passthru",
+    )
+    assert old.entity_id == f"switch.{PREFIX}_passthru"
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    state = hass.states.get(f"switch.{PREFIX}_passthru")
+    assert state is not None
+    assert (
+        state.attributes["friendly_name"] == "Victron VE.Bus Stop grid charging (0 A)"
+    )
+    assert hass.states.get(f"switch.{PREFIX}_stop_grid_charging_0_a") is None
