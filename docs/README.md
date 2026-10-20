@@ -10,7 +10,7 @@
 | [Energy](energy.md) | The kWh sensors and how to use them in the Energy dashboard |
 | [Alarm notifications](alarms.md) | The Alarm event entity, repair issues and a notification example |
 | [Connection health and keep awake](connection.md) | Link quality, timeouts and the *Keep awake* switch |
-| [Controlling the Multi](controls.md) | The *Allow critical changes* lock, saving permanently, passthru, the risks, the guided dialog and how settings are written |
+| [Controlling the Multi](controls.md) | The *Allow critical changes* lock, saving permanently, stopping grid charging, the risks, the guided dialog and how settings are written |
 | [Actions](actions.md) | `set_mode`, `set_setting`, `set_feature`, `equalise`, `restart`, `save_settings` and `set_remote_panel_state` for automations |
 | [ESS and battery operational limits](ess-and-bms.md) | ESS external control and BMS-style battery limits (advanced) |
 | [Command line tool](cli.md) | Testing on the hardware without Home Assistant |

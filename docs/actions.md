@@ -14,7 +14,7 @@ control*.
 | `victron_vebus.equalise` | |
 | `victron_vebus.restart` | |
 | `victron_vebus.save_settings` | Stores the settings changed in RAM. |
-| `victron_vebus.set_remote_panel_state` | `mode`, optional `current_limit` (0 = passthru) |
+| `victron_vebus.set_remote_panel_state` | `mode`, optional `current_limit` (0 = stop grid charging, passthru) |
 
 ```yaml
 # Charger only at night, normal operation in the morning.

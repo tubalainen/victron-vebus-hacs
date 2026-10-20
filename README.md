@@ -37,7 +37,7 @@ the analysis and the roadmap.
   and temperature alarms. See [Alarm notifications](docs/alarms.md).
 - **Monitor only, or monitor and control**, chosen when you add the integration.
 - **Every control in Home Assistant**: routine controls on the device page, and
-  critical ones (mode, passthru, charge voltages, PowerAssist, UPS, restart, ...)
+  critical ones (mode, stop grid charging, charge voltages, PowerAssist, UPS, restart, ...)
   behind an *Allow critical changes* lock. See [Controlling the Multi](docs/controls.md)
   and [Actions](docs/actions.md) for automations.
 - **Multi-unit systems** (parallel, split-phase, three-phase), **Quattro** and
@@ -82,7 +82,7 @@ More in [Installation and setup](docs/installation.md), including the options.
 | [Energy](docs/energy.md) | The kWh sensors and how to use them in the Energy dashboard |
 | [Alarm notifications](docs/alarms.md) | The Alarm event entity, repair issues and a notification example |
 | [Connection health and keep awake](docs/connection.md) | Link quality, timeouts and the *Keep awake* switch |
-| [Controlling the Multi](docs/controls.md) | The *Allow critical changes* lock, saving permanently, passthru, the risks, the guided dialog and how settings are written |
+| [Controlling the Multi](docs/controls.md) | The *Allow critical changes* lock, saving permanently, stopping grid charging, the risks, the guided dialog and how settings are written |
 | [Actions](docs/actions.md) | `set_mode`, `set_setting`, `set_feature`, `equalise`, `restart`, `save_settings` and `set_remote_panel_state` for automations |
 | [ESS and battery operational limits](docs/ess-and-bms.md) | ESS external control and BMS-style battery limits (advanced) |
 | [Command line tool](docs/cli.md) | Testing on the hardware without Home Assistant |

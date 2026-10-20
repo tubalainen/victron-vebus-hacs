@@ -52,7 +52,7 @@
       },
       "control_warning": {
         "title": "⚠️ Read this before enabling control",
-        "description": "**DO NOT CHANGE ANY SETTING IF YOU ARE NOT SURE WHAT IT DOES.**\n\nWrong settings can cut the power on AC out 1 and AC out 2, stop the battery from charging, or damage the battery, the Multi and connected equipment.\n\n- Critical changes (mode, passthru, restart, charge voltages, PowerAssist, UPS function, equalisation, saving settings permanently) are locked. They work after turning on *Allow critical changes* on the device page (it turns itself off again after 10 minutes), in the guided *Configure → Device actions* dialog, or in actions with `acknowledge_risk: true`. Each shows its risks.\n- Restarting the Multi, or switching its relays, cuts the power on AC out 1 and AC out 2: **every device connected to them is switched off and on again (power cycled).**\n- By default settings change in the Multi's RAM only and return to the stored configuration when it restarts.\n\n**Disclaimer:** this is an unofficial community integration. It is not made, endorsed or supported by Victron Energy. It is provided as is, without any warranty. The authors and contributors take **no responsibility whatsoever** for any damage to equipment, batteries or property, for injury, or for any other loss caused by using it. You use it entirely at your own risk.",
+        "description": "**DO NOT CHANGE ANY SETTING IF YOU ARE NOT SURE WHAT IT DOES.**\n\nWrong settings can cut the power on AC out 1 and AC out 2, stop the battery from charging, or damage the battery, the Multi and connected equipment.\n\n- Critical changes (mode, stopping grid charging, restart, charge voltages, PowerAssist, UPS function, equalisation, saving settings permanently) are locked. They work after turning on *Allow critical changes* on the device page (it turns itself off again after 10 minutes), in the guided *Configure → Device actions* dialog, or in actions with `acknowledge_risk: true`. Each shows its risks.\n- Restarting the Multi, or switching its relays, cuts the power on AC out 1 and AC out 2: **every device connected to them is switched off and on again (power cycled).**\n- By default settings change in the Multi's RAM only and return to the stored configuration when it restarts.\n\n**Disclaimer:** this is an unofficial community integration. It is not made, endorsed or supported by Victron Energy. It is provided as is, without any warranty. The authors and contributors take **no responsibility whatsoever** for any damage to equipment, batteries or property, for injury, or for any other loss caused by using it. You use it entirely at your own risk.",
         "data": {
           "acknowledge": "I understand: I will not change settings I am not sure about, and I accept full responsibility for what I change"
         }
@@ -80,7 +80,7 @@
         "title": "Victron VE.Bus",
         "menu_options": {
           "settings": "Integration settings",
-          "actions": "Device actions (restart, mode, passthru, charger settings…)"
+          "actions": "Device actions (restart, mode, grid charging, charger settings…)"
         }
       },
       "settings": {
@@ -102,7 +102,7 @@
         "description": "These actions change how the Multi operates. Each one shows its risks and asks for confirmation before anything is sent.",
         "menu_options": {
           "action_mode": "Change the mode (on, off, charger only, inverter only)",
-          "action_passthru": "Enter or leave passthru",
+          "action_passthru": "Stop or resume charging from the grid (0 A input limit)",
           "action_setting": "Change a charger setting",
           "action_flag": "Switch PowerAssist, weak AC input, UPS or solar & wind priority",
           "action_equalise": "Start equalisation",
@@ -117,11 +117,11 @@
         }
       },
       "action_passthru": {
-        "title": "Passthru",
-        "description": "Passthru sets the remote AC input current limit to 0 A. To leave it, the limit below is restored.",
+        "title": "Stop grid charging",
+        "description": "Sets the remote AC input current limit to 0 A: the charger stops and the grid is passed straight through to the AC outputs (Victron calls this passthru). Normal operation (mode on) does not need it. To resume, the limit below is restored.",
         "data": {
           "passthru": "Action",
-          "current_limit": "Current limit when leaving passthru"
+          "current_limit": "Current limit when resuming"
         }
       },
       "action_setting": {
@@ -576,7 +576,7 @@
         }
       },
       "passthru": {
-        "name": "Passthru"
+        "name": "Stop grid charging (0 A)"
       },
       "power_assist": {
         "name": "PowerAssist"
@@ -709,7 +709,7 @@
         },
         "current_limit": {
           "name": "Current limit",
-          "description": "AC input current limit in ampere. Leave empty to keep the current limit. With PowerAssist off, 0 puts the device in passthru."
+          "description": "AC input current limit in ampere. Leave empty to keep the current limit. With PowerAssist off, 0 stops charging from the grid (passthru)."
         },
         "config_entry_id": {
           "name": "Device",
@@ -863,8 +863,8 @@
     },
     "passthru": {
       "options": {
-        "enter": "Enter passthru (limit 0 A)",
-        "leave": "Leave passthru"
+        "enter": "Stop grid charging (limit 0 A)",
+        "leave": "Resume grid charging"
       }
     },
     "usage": {

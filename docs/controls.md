@@ -19,7 +19,7 @@ change battery charge voltages or write the EEPROM. They are locked:
 
 1. Turn on **Allow critical changes** (under *Configuration* on the device page). It
    turns itself off again after 10 minutes; its `turns_off_at` attribute says when.
-2. Use the critical control: **Mode**, **Passthru**, **PowerAssist**, **Weak AC
+2. Use the critical control: **Mode**, **Stop grid charging (0 A)**, **PowerAssist**, **Weak AC
    input**, **UPS function**, **Absorption voltage**, **Float voltage**, **Start
    equalisation**, **Restart the Multi** or **Save settings permanently**.
 
@@ -32,9 +32,14 @@ they apply immediately and are lost when the Multi restarts, so they are safe to
 **Unsaved setting changes** shows how many there are. **Save settings permanently**
 stores them in the EEPROM (limited to once per setting every 5 minutes).
 
-**Passthru** sets the remote AC input current limit to 0 A. Turning it off restores the
-last limit (or the configured AC input limit). Changing the mode while in passthru keeps
-passthru.
+**Stop grid charging (0 A)** sets the remote AC input current limit to 0 A: the charger
+stops and the grid is passed straight through to the AC outputs (Victron calls this
+*passthru*). Use it to stop charging from the grid for a while, for example during
+expensive hours or on a weak generator. Normal operation (mode *On*) does **not** need
+it: then the Multi passes the grid through and charges the battery at the same time, and
+the *Device state* sensor shows *Passthru* whenever the battery needs no charging.
+Turning the switch off restores the last limit (or the configured AC input limit).
+Changing the mode while grid charging is stopped keeps the 0 A limit.
 
 For an extra confirmation on a dashboard, use a card's own confirmation, for example
 a button card:
@@ -70,7 +75,7 @@ submit. Charger settings and features can be written in RAM or permanently here 
 | **Mode: charger only** | No inverter: the AC outputs **lose power on a grid failure**. |
 | **Mode: inverter only** | The Multi disconnects from the grid (relay switches); **AC out 2 loses power**; the battery discharges. |
 | **Mode: on** | Normal operation; if the Multi was off it starts and its relays click. |
-| **Passthru** (limit 0 A) | With PowerAssist off the charger stops and the grid is passed through; with PowerAssist on the Multi inverts from the battery instead. |
+| **Stop grid charging** (passthru, limit 0 A) | With PowerAssist off the charger stops and the grid is passed through; with PowerAssist on the Multi inverts from the battery instead. |
 | **Charger settings** | Wrong charge voltages or currents can damage the battery; too high an AC input limit can trip the grid breaker. |
 | **PowerAssist / weak AC / UPS** | PowerAssist off can trip the grid breaker under load; UPS off makes transfers slower, which **can interrupt the AC outputs** on a grid failure. |
 | **Equalisation** | Charges above the absorption voltage — never for lithium, gel or AGM batteries unless allowed by the manufacturer. |

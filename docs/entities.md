@@ -41,7 +41,7 @@ settings.
 | Force absorption / float (buttons) | *Monitor and control*; firmware 400+. |
 | Charge current limit, Configured AC input (2) current limit (numbers) | *Monitor and control*; firmware 412+. RAM only. |
 | Allow critical changes (switch) | *Monitor and control*. Off by default; turns itself off after 10 minutes. See [Controlling the Multi](controls.md). |
-| Mode (select), Passthru, PowerAssist, Weak AC input, UPS function (switches), Absorption / Float voltage (numbers) | *Monitor and control*; critical. Settings need firmware 412+ and change RAM only. |
+| Mode (select), Stop grid charging (0 A), PowerAssist, Weak AC input, UPS function (switches), Absorption / Float voltage (numbers) | *Monitor and control*; critical. Settings need firmware 412+ and change RAM only. |
 | Start equalisation, Restart the Multi, Save settings permanently (buttons) | *Monitor and control*; critical. Equalisation needs firmware 400+, saving 412+. |
 | Unsaved setting changes | Diagnostic, *Monitor and control*. The number of settings changed in RAM only, listed in the `settings` attribute. |
 | Solar & wind priority (switch), Solar & wind priority voltage (number) | *Monitor and control*; firmware 506+ and the feature configured. RAM only. |
