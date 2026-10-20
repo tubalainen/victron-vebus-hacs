@@ -735,7 +735,7 @@
         },
         "acknowledge_risk": {
           "name": "Acknowledge risk",
-          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the documentation."
         }
       }
     },
@@ -761,7 +761,7 @@
         },
         "acknowledge_risk": {
           "name": "Acknowledge risk",
-          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the documentation."
         }
       }
     },
@@ -787,7 +787,7 @@
         },
         "acknowledge_risk": {
           "name": "Acknowledge risk",
-          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the documentation."
         }
       }
     },
@@ -801,7 +801,7 @@
         },
         "acknowledge_risk": {
           "name": "Acknowledge risk",
-          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the documentation."
         }
       }
     },
@@ -815,7 +815,7 @@
         },
         "acknowledge_risk": {
           "name": "Acknowledge risk",
-          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the documentation."
         }
       }
     },
@@ -829,7 +829,7 @@
         },
         "acknowledge_risk": {
           "name": "Acknowledge risk",
-          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the documentation."
         }
       }
     }
