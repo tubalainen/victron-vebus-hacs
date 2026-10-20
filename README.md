@@ -60,7 +60,7 @@ the analysis and the roadmap.
   - Charger settings: absorption and float voltage, charge current, battery capacity,
     charge characteristic and maximum absorption time.
   - Inverter output voltage, low battery shutdown and restart voltage.
-  - Raw LED states.
+  - The eight front panel LEDs, each off, on or blinking.
   - A diagnostics download with communication statistics and the last raw frames.
 - **Multi-unit systems** (parallel, split-phase and three-phase).
   - All units on the VE.Bus are found at startup. Each gets its own device, linked to
@@ -148,7 +148,7 @@ settings.
 | Absorption / float voltage, charge current limit, battery capacity | Diagnostic, read from the device settings. |
 | Inverter output voltage, Low battery shutdown / restart voltage, Charge characteristic, Maximum absorption time | Diagnostic, read from the device settings. The restart voltage is the shutdown voltage plus its hysteresis. |
 | Firmware version, MK3 interface version | Diagnostic. |
-| LED binary sensors (8) | *(disabled)*, with a `blinking` attribute. |
+| Mains / Absorption / Bulk / Float / Inverter / Overload / Low battery / Temperature LED | Diagnostic: the front panel LEDs, each off, on or blinking. |
 | Keep awake (switch) | See below. |
 | Solar & wind priority voltage | Diagnostic. Only on firmware 506+ with the feature configured. |
 | Configured AC input 2 current limit | Diagnostic. Only on devices with a second AC input (Quattro). |

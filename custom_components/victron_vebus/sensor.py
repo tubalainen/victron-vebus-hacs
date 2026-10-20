@@ -32,7 +32,16 @@ from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, ENERGY_MIN_GAP
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
 from .energy import EnergyCounter
 from .entity import VeBusEntity
-from .vebus import AlarmState, ChargeState, DeviceState, Led, Mode, RamVar, Setting
+from .vebus import (
+    AlarmState,
+    ChargeState,
+    DeviceState,
+    Led,
+    LedState,
+    Mode,
+    RamVar,
+    Setting,
+)
 from .vebus.models import AcInfo, UnitState, VeBusState
 
 PARALLEL_UPDATES = 0
@@ -87,6 +96,28 @@ def _charge_state(state: VeBusState) -> StateType:
     if info.state is not DeviceState.CHARGE:
         return NOT_CHARGING
     return info.charge_state.value if info.charge_state else None
+
+
+# Front panel LEDs, each shown as off, on or blinking.
+LED_NAMES: dict[str, Led] = {
+    "mains": Led.MAINS,
+    "absorption": Led.ABSORPTION,
+    "bulk": Led.BULK,
+    "float": Led.FLOAT,
+    "inverter": Led.INVERTER,
+    "overload": Led.OVERLOAD,
+    "low_battery": Led.LOW_BATTERY,
+    "temperature": Led.TEMPERATURE,
+}
+
+
+def _led(led: Led) -> Callable[[VeBusState], StateType]:
+    def value(state: VeBusState) -> StateType:
+        if state.leds is None or not state.leds.known:
+            return None
+        return state.leds.state(led).value
+
+    return value
 
 
 def _alarm(led: Led) -> Callable[[VeBusState], StateType]:
@@ -305,6 +336,17 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=[alarm.value for alarm in AlarmState],
         value_fn=_alarm(Led.TEMPERATURE),
+    ),
+    *(
+        VeBusSensorEntityDescription(
+            key=f"led_{name}",
+            translation_key=f"led_{name}",
+            device_class=SensorDeviceClass.ENUM,
+            options=[led_state.value for led_state in LedState],
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=_led(led),
+        )
+        for name, led in LED_NAMES.items()
     ),
     VeBusSensorEntityDescription(
         key="active_ac_input",

@@ -70,7 +70,11 @@ async def test_setup_creates_entities(
     registry = er.async_get(hass)
     entity = registry.async_get("sensor.victron_ve_bus_battery_voltage")
     assert entity is not None and entity.unique_id == "HQ123_0_battery_voltage"
-    assert registry.async_get("binary_sensor.victron_ve_bus_mains_led").disabled_by
+    # LEDs: mains and float on (0x09), shown as diagnostic enum sensors.
+    assert state("sensor.victron_ve_bus_mains_led") == "on"
+    assert state("sensor.victron_ve_bus_float_led") == "on"
+    assert state("sensor.victron_ve_bus_bulk_led") == "off"
+    assert hass.states.get("binary_sensor.victron_ve_bus_mains_led") is None
 
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
