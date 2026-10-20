@@ -36,18 +36,9 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.SWITCH,
 ]
-CONTROL_PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.NUMBER]
+CONTROL_PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.NUMBER, Platform.SELECT]
 # Entities of earlier versions that no longer exist; removed from the registry.
 REMOVED_ENTITIES: tuple[tuple[str, str], ...] = (
-    # Changes now only offered in the guided "Device actions" dialog, which
-    # shows their risks first (v0.5).
-    ("select", "remote_mode"),
-    ("switch", "power_assist"),
-    ("switch", "weak_ac_input"),
-    ("switch", "ups_function"),
-    ("number", "absorption_voltage"),
-    ("number", "float_voltage"),
-    ("button", "force_equalise"),
     # The LED binary sensors became sensors showing off / on / blinking (v0.6).
     *(
         ("binary_sensor", f"led_{name}")

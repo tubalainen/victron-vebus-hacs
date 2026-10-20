@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from typing import Any
 
 from homeassistant.components.sensor import (
     RestoreSensor,
@@ -28,7 +29,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
-from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, ENERGY_MIN_GAP
+from . import actions
+from .const import (
+    CONF_ENABLE_CONTROLS,
+    CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
+    ENERGY_MIN_GAP,
+)
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
 from .energy import EnergyCounter
 from .entity import VeBusEntity
@@ -806,6 +813,8 @@ async def async_setup_entry(
     entities.extend(
         VeBusLinkSensor(coordinator, description) for description in LINK_SENSORS
     )
+    if entry.options.get(CONF_ENABLE_CONTROLS, False):
+        entities.append(VeBusUnsavedSensor(coordinator, UNSAVED_CHANGES))
     phases = coordinator.identity.phases
     multi_phase = len(phases) > 1
     phase_descriptions = (
@@ -1010,3 +1019,33 @@ class VeBusLinkSensor(VeBusEntity, SensorEntity):
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
         return self.entity_description.value_fn(self.coordinator)
+
+
+UNSAVED_CHANGES = SensorEntityDescription(
+    key="unsaved_changes",
+    translation_key="unsaved_changes",
+    state_class=SensorStateClass.MEASUREMENT,
+    entity_category=EntityCategory.DIAGNOSTIC,
+)
+
+
+class VeBusUnsavedSensor(VeBusEntity, SensorEntity):
+    """Settings changed in RAM only, lost when the Multi restarts.
+
+    "Save settings permanently" stores them in the EEPROM.
+    """
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of changed settings."""
+        return len(self.coordinator.client.unsaved_settings)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """List the changed settings."""
+        return {
+            "settings": [
+                actions.setting_name(setting)
+                for setting in sorted(self.coordinator.client.unsaved_settings)
+            ]
+        }

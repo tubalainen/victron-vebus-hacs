@@ -83,6 +83,7 @@ was used where it agrees with the specification.
 | **0.6** (beta) | Energy sensors for the Energy dashboard (grid import/export, AC output, battery charged/discharged), integrated from the filtered power RAM variables with the trapezoidal rule and restored across restarts. Alarm notifications: an event entity and repair issues driven by the overload, low battery and temperature LEDs. Status sensors: virtual switch (RAM 10), inverter output voltage (setting 5), maximum absorption time (9), charge characteristic (10), low battery shutdown (11) and restart voltage (11 + 12). 0.6.0-beta2: the front panel LEDs are enum sensors (off / on / blinking) instead of binary sensors, and an `L` reply of `0x1F`/`0x1F` (LEDs unknown, spec §4) reads as unknown. |
 | **0.7** (beta) | A value that cannot be read keeps its last good reading through two consecutive failures (`MAX_STALE_READS`) instead of becoming unknown at once; a re-read after a command that times out no longer fails the command. Connection health: requests are counted, and link quality (answered share over 5 minutes), request timeouts and checksum errors are diagnostic sensors, with a repair issue below 90%. Per-unit energy sensors in multi-unit systems. Per-unit alarms are not possible: the `L` LED status describes the whole VE.Bus system (spec §4). |
 | **1.0** | First stable release: the features of 0.1–0.7. Monitoring and mode changes are in use on a MultiPlus-II; the items below are still verified only against the simulator. |
+| **1.1** | Every control usable in Home Assistant itself. Critical changes (mode select, passthru, PowerAssist / weak AC / UPS switches, absorption and float voltage, equalise, restart, save) are entities behind an "Allow critical changes" switch that turns itself off after 10 minutes. Entity changes go to RAM; "Save settings permanently" stores the settings changed since the last restart or save (tracked by the client, cleared on restart and boot frames). Actions `set_mode`, `set_setting`, `set_feature`, `equalise`, `restart`, `save_settings` with `acknowledge_risk`. Passthru is remembered because the device may report its minimum limit instead of 0 A; a mode change in passthru keeps 0 A. |
 
 ## 5. Things to verify on real hardware
 
@@ -163,3 +164,10 @@ v0.6 adds these, verified only against the simulator:
   flags[3]", but FINDINGS.md §7.1 shows VEConfigure changing only bit 3 when switching
   the UPS function (MultiPlus `0x81B4` ↔ `0x81BC`), and bit 7 differs by model. The
   integration therefore changes only bit 3, like VEConfigure.
+
+1.1 adds these, verified only against the simulator:
+
+- **Passthru:** whether the Multi reports 0 A or its minimum limit after a remote
+  limit of 0 A. The integration remembers that passthru was requested either way.
+- **Save settings permanently:** each setting changed in RAM is read and written back
+  with WriteViaID flags 0x01 (see the permanent writes above).

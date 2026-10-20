@@ -154,6 +154,12 @@
       },
       "checksum_errors": {
         "default": "mdi:alert-circle-outline"
+      },
+      "unsaved_changes": {
+        "default": "mdi:content-save-edit-outline",
+        "state": {
+          "0": "mdi:content-save-check-outline"
+        }
       }
     },
     "binary_sensor": {
@@ -193,6 +199,16 @@
         "default": "mdi:alarm-light-outline"
       }
     },
+    "select": {
+      "remote_mode": {
+        "default": "mdi:power-settings",
+        "state": {
+          "off": "mdi:power-off",
+          "charger_only": "mdi:battery-charging",
+          "inverter_only": "mdi:sine-wave"
+        }
+      }
+    },
     "switch": {
       "keep_awake": {
         "default": "mdi:sleep",
@@ -214,6 +230,27 @@
       },
       "ess_disable_feed_in": {
         "default": "mdi:transmission-tower-export"
+      },
+      "allow_critical_changes": {
+        "default": "mdi:lock",
+        "state": {
+          "on": "mdi:lock-open-alert"
+        }
+      },
+      "passthru": {
+        "default": "mdi:transmission-tower",
+        "state": {
+          "on": "mdi:transmission-tower-export"
+        }
+      },
+      "power_assist": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "weak_ac_input": {
+        "default": "mdi:sine-wave"
+      },
+      "ups_function": {
+        "default": "mdi:power-plug-battery"
       }
     },
     "number": {
@@ -249,6 +286,12 @@
       },
       "bms_discharge_current": {
         "default": "mdi:battery-minus"
+      },
+      "absorption_voltage": {
+        "default": "mdi:battery-charging-high"
+      },
+      "float_voltage": {
+        "default": "mdi:battery-charging-medium"
       }
     },
     "button": {
@@ -257,12 +300,36 @@
       },
       "force_float": {
         "default": "mdi:battery-sync"
+      },
+      "force_equalise": {
+        "default": "mdi:battery-alert"
+      },
+      "save_settings": {
+        "default": "mdi:content-save-alert"
       }
     }
   },
   "services": {
     "set_remote_panel_state": {
       "service": "mdi:remote"
+    },
+    "set_mode": {
+      "service": "mdi:power-settings"
+    },
+    "set_setting": {
+      "service": "mdi:tune-variant"
+    },
+    "set_feature": {
+      "service": "mdi:toggle-switch-variant"
+    },
+    "equalise": {
+      "service": "mdi:battery-alert"
+    },
+    "restart": {
+      "service": "mdi:restart-alert"
+    },
+    "save_settings": {
+      "service": "mdi:content-save-alert"
     }
   }
 }

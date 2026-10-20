@@ -1,7 +1,8 @@
 """Numbers for the Victron VE.Bus integration.
 
 The remote panel current limit, and charger settings changed in RAM only (the
-device's stored configuration is not changed; a restart restores it).
+device's stored configuration is not changed until it is saved permanently;
+a restart restores it). Charge voltages are critical changes.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from . import actions
 from .const import DOMAIN, ESS_SETPOINT_LIMIT
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
 from .entity import VeBusEntity
@@ -45,24 +47,40 @@ CURRENT_LIMIT = NumberEntityDescription(
 )
 
 
-def _check_not_above_absorption(state: VeBusState, value: float) -> str | None:
-    absorption = state.setting_value(Setting.U_BAT_ABSORPTION)
-    if absorption is not None and value > absorption:
-        return f"{value} V is above the absorption voltage of {absorption} V"
-    return None
-
-
 @dataclass(frozen=True, kw_only=True)
 class VeBusSettingNumberEntityDescription(NumberEntityDescription):
     """Describes a number backed by a device setting."""
 
     setting: Setting
     exists_fn: Callable[[VeBusCoordinator], bool] = lambda _: True
-    # Returns an error message if the value is not allowed in the current state.
-    check_fn: Callable[[VeBusState, float], str | None] = lambda _s, _v: None
+    # Needs "Allow critical changes"; ``label`` names it in the refusal.
+    critical: bool = False
+    label: str = ""
 
 
 SETTING_NUMBERS: tuple[VeBusSettingNumberEntityDescription, ...] = (
+    VeBusSettingNumberEntityDescription(
+        key="absorption_voltage",
+        translation_key="absorption_voltage",
+        setting=Setting.U_BAT_ABSORPTION,
+        device_class=NumberDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+        critical=True,
+        label="Absorption voltage",
+    ),
+    VeBusSettingNumberEntityDescription(
+        key="float_voltage",
+        translation_key="float_voltage",
+        setting=Setting.U_BAT_FLOAT,
+        device_class=NumberDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+        critical=True,
+        label="Float voltage",
+    ),
     VeBusSettingNumberEntityDescription(
         key="charge_current_limit",
         translation_key="charge_current_limit",
@@ -99,7 +117,6 @@ SETTING_NUMBERS: tuple[VeBusSettingNumberEntityDescription, ...] = (
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
         exists_fn=lambda coordinator: coordinator.supports_solar_wind_priority(),
-        check_fn=_check_not_above_absorption,
     ),
 )
 
@@ -171,6 +188,7 @@ class VeBusCurrentLimitNumber(VeBusEntity, NumberEntity):
         mode = config.mode if config and config.mode else Mode.ON
         try:
             await self.coordinator.client.set_remote_panel_state(mode, value)
+            self.coordinator.passthru = value == 0
             await self.coordinator.async_refresh_config()
         except VeBusError as err:
             raise HomeAssistantError(
@@ -207,17 +225,20 @@ class VeBusSettingNumber(VeBusEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Write the setting to the device's RAM."""
-        error = self.entity_description.check_fn(self.coordinator.data, value)
+        description = self.entity_description
+        error = actions.check_setting(self.coordinator, description.setting, value)
         if error is not None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="invalid_value",
                 translation_placeholders={"error": error},
             )
-        await self.async_device_call(
-            self.coordinator.client.write_setting(
-                self.entity_description.setting, value
+        if description.critical:
+            self.coordinator.require_critical_allowed(
+                f"{description.label} {value:g}", actions.SETTING_RISK
             )
+        await self.async_device_call(
+            self.coordinator.client.write_setting(description.setting, value)
         )
 
 

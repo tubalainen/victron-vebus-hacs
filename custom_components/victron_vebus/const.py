@@ -42,6 +42,8 @@ LINK_QUALITY_WINDOW: Final = 300
 LINK_ISSUE_MIN_REQUESTS: Final = 100
 LINK_ISSUE_BELOW: Final = 90.0
 LINK_ISSUE_CLEAR: Final = 95.0
+# "Allow critical changes" turns itself off again after this many seconds.
+CRITICAL_UNLOCK_DURATION: Final = 600
 # Power samples further apart than this (or 5 polling intervals, if longer)
 # are not integrated into the energy sensors.
 ENERGY_MIN_GAP: Final = 60
@@ -51,7 +53,18 @@ PROBE_TIMEOUT: Final = 15
 SETUP_TIMEOUT: Final = 30
 
 SERVICE_SET_REMOTE_PANEL_STATE: Final = "set_remote_panel_state"
+SERVICE_SET_MODE: Final = "set_mode"
+SERVICE_SET_SETTING: Final = "set_setting"
+SERVICE_SET_FEATURE: Final = "set_feature"
+SERVICE_EQUALISE: Final = "equalise"
+SERVICE_RESTART: Final = "restart"
+SERVICE_SAVE_SETTINGS: Final = "save_settings"
 ATTR_MODE: Final = "mode"
 ATTR_CURRENT_LIMIT: Final = "current_limit"
 ATTR_CONFIG_ENTRY_ID: Final = "config_entry_id"
 ATTR_ACKNOWLEDGE_RISK: Final = "acknowledge_risk"
+ATTR_SETTING: Final = "setting"
+ATTR_VALUE: Final = "value"
+ATTR_FEATURE: Final = "feature"
+ATTR_ENABLED: Final = "enabled"
+ATTR_PERSISTENT: Final = "persistent"
