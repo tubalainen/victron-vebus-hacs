@@ -4,19 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import logging
 import time
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ALARM_ISSUES,
     CONF_ENABLE_BATTERY_LIMITS,
     CONF_SCAN_INTERVAL,
+    CRITICAL_UNLOCK_DURATION,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     ESS_REFRESH_INTERVAL,
@@ -112,6 +117,14 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         self.alarms: dict[str, AlarmState] = {}
         self._alarm_listeners: list[AlarmListener] = []
         self.link = LinkQuality(window=LINK_QUALITY_WINDOW)
+        # "Allow critical changes": until when critical entities may be used.
+        self.critical_allowed_until: datetime | None = None
+        self._cancel_relock: CALLBACK_TYPE | None = None
+        # Last AC input current limit above 0 A, to leave passthru with.
+        self.last_current_limit: float | None = None
+        # Passthru requested (remote current limit 0 A). The device may
+        # report its minimum limit instead of 0 A, so this is remembered.
+        self.passthru = False
         self._link_issue = False
         self.data = client.state
 
@@ -298,8 +311,49 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
             ir.async_delete_issue(self.hass, DOMAIN, self._alarm_issue_id(alarm))
         ir.async_delete_issue(self.hass, DOMAIN, self._link_issue_id)
 
+    @property
+    def critical_allowed(self) -> bool:
+        """Return True while critical changes are allowed."""
+        return self.critical_allowed_until is not None
+
+    @callback
+    def async_set_critical_allowed(self, allowed: bool) -> None:
+        """Allow critical changes for a while, or lock them again."""
+        if self._cancel_relock is not None:
+            self._cancel_relock()
+            self._cancel_relock = None
+        if allowed:
+            self.critical_allowed_until = dt_util.utcnow() + timedelta(
+                seconds=CRITICAL_UNLOCK_DURATION
+            )
+            self._cancel_relock = async_call_later(
+                self.hass, CRITICAL_UNLOCK_DURATION, self._async_relock
+            )
+        else:
+            self.critical_allowed_until = None
+        self.async_update_listeners()
+
+    @callback
+    def _async_relock(self, _now: datetime) -> None:
+        self._cancel_relock = None
+        self.critical_allowed_until = None
+        _LOGGER.debug("Critical changes are locked again")
+        self.async_update_listeners()
+
+    def require_critical_allowed(self, action: str, risk: str) -> None:
+        """Refuse a critical change unless "Allow critical changes" is on."""
+        if not self.critical_allowed:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="critical_locked",
+                translation_placeholders={"action": action, "risk": risk},
+            )
+
     async def async_release(self) -> None:
         """Hand ESS control back to the device before unloading."""
+        if self._cancel_relock is not None:
+            self._cancel_relock()
+            self._cancel_relock = None
         if not self.ess_control or not self.client.connected:
             return
         try:
@@ -327,6 +381,9 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
         self._async_check_link()
         self._async_check_alarms(state)
+        config = state.config
+        if config is not None and config.actual_current_limit > 0 and not self.passthru:
+            self.last_current_limit = config.actual_current_limit
         self.async_set_updated_data(state)
 
     @callback

@@ -1,7 +1,8 @@
 """Switches for the Victron VE.Bus integration.
 
-The keep awake switch, and (with controls enabled) switches for flag settings
-that are changed in RAM only, so a device restart restores its configuration.
+The keep awake switch, and with controls enabled: "Allow critical changes",
+passthru, and switches for flag settings that are changed in RAM only (a
+device restart restores its configuration until it is saved permanently).
 """
 
 from __future__ import annotations
@@ -16,10 +17,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from . import actions
 from .const import CONF_ENABLE_CONTROLS
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
 from .entity import VeBusEntity
 from .vebus import Setting, SettingFlag
+from .vebus.models import ConfigInfo
 
 PARALLEL_UPDATES = 1
 
@@ -39,9 +42,40 @@ class VeBusFlagSwitchEntityDescription(SwitchEntityDescription):
     # The switch is on while the bit is clear.
     inverted: bool = False
     exists_fn: Callable[[VeBusCoordinator], bool] = lambda _: True
+    # Needs "Allow critical changes"; ``label`` names it in the refusal.
+    critical: bool = False
+    label: str = ""
 
 
 FLAG_SWITCHES: tuple[VeBusFlagSwitchEntityDescription, ...] = (
+    VeBusFlagSwitchEntityDescription(
+        key="power_assist",
+        translation_key="power_assist",
+        entity_category=EntityCategory.CONFIG,
+        setting=Setting.FLAGS_0,
+        flag=SettingFlag.ASSIST_ENABLED,
+        critical=True,
+        label="PowerAssist",
+    ),
+    VeBusFlagSwitchEntityDescription(
+        key="weak_ac_input",
+        translation_key="weak_ac_input",
+        entity_category=EntityCategory.CONFIG,
+        setting=Setting.FLAGS_0,
+        flag=SettingFlag.WEAK_AC_INPUT,
+        critical=True,
+        label="Weak AC input",
+    ),
+    VeBusFlagSwitchEntityDescription(
+        key="ups_function",
+        translation_key="ups_function",
+        entity_category=EntityCategory.CONFIG,
+        setting=Setting.FLAGS_0,
+        flag=SettingFlag.DISABLE_WAVE_CHECK,
+        inverted=True,
+        critical=True,
+        label="UPS function",
+    ),
     VeBusFlagSwitchEntityDescription(
         key="solar_wind_priority",
         translation_key="solar_wind_priority",
@@ -49,6 +83,18 @@ FLAG_SWITCHES: tuple[VeBusFlagSwitchEntityDescription, ...] = (
         flag=SettingFlag.SOLAR_WIND_PRIORITY,
         exists_fn=lambda coordinator: coordinator.supports_solar_wind_priority(),
     ),
+)
+
+
+ALLOW_CRITICAL = SwitchEntityDescription(
+    key="allow_critical_changes",
+    translation_key="allow_critical_changes",
+    entity_category=EntityCategory.CONFIG,
+)
+
+PASSTHRU = SwitchEntityDescription(
+    key="passthru",
+    translation_key="passthru",
 )
 
 
@@ -88,6 +134,8 @@ async def async_setup_entry(
     coordinator = entry.runtime_data.coordinator
     entities: list[SwitchEntity] = [VeBusKeepAwakeSwitch(coordinator, KEEP_AWAKE)]
     if entry.options.get(CONF_ENABLE_CONTROLS, False):
+        entities.append(VeBusAllowCriticalSwitch(coordinator, ALLOW_CRITICAL))
+        entities.append(VeBusPassthruSwitch(coordinator, PASSTHRU))
         entities.extend(
             VeBusFlagSwitch(coordinator, description)
             for description in FLAG_SWITCHES
@@ -173,10 +221,107 @@ class VeBusFlagSwitch(VeBusEntity, SwitchEntity):
 
     async def _async_set(self, on: bool) -> None:
         description = self.entity_description
+        if description.critical:
+            self.coordinator.require_critical_allowed(
+                f"{description.label} {'on' if on else 'off'}",
+                actions.FLAG_RISKS[(description.flag, on != description.inverted)],
+            )
         await self.async_device_call(
             self.coordinator.client.set_setting_flag(
                 description.setting, description.flag, on != description.inverted
             )
+        )
+
+
+class VeBusAllowCriticalSwitch(VeBusEntity, SwitchEntity):
+    """Allows critical changes for 10 minutes, then turns itself off.
+
+    Critical entities (mode, passthru, charge voltages, PowerAssist, weak AC
+    input, UPS, equalisation, restart and saving permanently) refuse changes
+    while it is off. It always starts off.
+    """
+
+    @property
+    def available(self) -> bool:
+        """The lock can be used even while the device is unreachable."""
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether critical changes are allowed."""
+        return self.coordinator.critical_allowed
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Report when the switch turns itself off again."""
+        until = self.coordinator.critical_allowed_until
+        return {"turns_off_at": until.isoformat()} if until is not None else None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Allow critical changes for 10 minutes."""
+        self.coordinator.async_set_critical_allowed(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Lock critical changes again."""
+        self.coordinator.async_set_critical_allowed(False)
+
+
+class VeBusPassthruSwitch(VeBusEntity, SwitchEntity, RestoreEntity):
+    """Passthru: the remote AC input current limit at 0 A (critical).
+
+    The device may report its minimum limit instead of 0 A, so the state is
+    what was requested; it is restored after a Home Assistant restart.
+    Turning it off restores the last current limit above 0 A, or else the
+    configured AC input current limit.
+    """
+
+    async def async_added_to_hass(self) -> None:
+        """Restore whether passthru was requested."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state == STATE_ON:
+            self.coordinator.passthru = True
+
+    @property
+    def _config(self) -> ConfigInfo | None:
+        config = self.coordinator.data.config
+        if config is None or config.dmc_dedicated:
+            return None
+        return config
+
+    @property
+    def available(self) -> bool:
+        """The limit cannot be set while a dedicated panel overrides it."""
+        return super().available and self._config is not None
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether passthru (a current limit of 0 A) is in effect."""
+        config = self._config
+        if config is None:
+            return None
+        return self.coordinator.passthru or config.actual_current_limit == 0
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enter passthru."""
+        self.coordinator.require_critical_allowed("Passthru on", actions.PASSTHRU_RISK)
+        await self.async_device_call(
+            actions.async_set_passthru(self.coordinator, True, None)
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Leave passthru with the last current limit."""
+        coordinator = self.coordinator
+        coordinator.require_critical_allowed(
+            "Passthru off", actions.PASSTHRU_LEAVE_RISK
+        )
+        limit = (
+            coordinator.last_current_limit
+            or coordinator.data.setting_value(Setting.I_MAINS_LIMIT_AC1)
+            or actions.DEFAULT_CURRENT_LIMIT
+        )
+        await self.async_device_call(
+            actions.async_set_passthru(coordinator, False, limit)
         )
 
 

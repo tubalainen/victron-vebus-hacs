@@ -287,6 +287,8 @@ class VeBusClient:
         self.ess_records: dict[int, int] = {}
         # Time of the last persistent (EEPROM) write per setting.
         self._persistent_writes: dict[int, float] = {}
+        # Settings changed in RAM only since the last restart or save.
+        self.unsaved_settings: set[int] = set()
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -362,8 +364,10 @@ class VeBusClient:
             self.mk3_version = int.from_bytes(frame.data[0:4], "little")
         elif frame.marker == MARKER_BOOT:
             # A VE.Bus device restarted, the address must be selected again.
+            # Its RAM settings were reset to the stored configuration.
             self.stats.boot_frames += 1
             self._readdress = True
+            self.unsaved_settings.clear()
         for waiter in self._waiters:
             if waiter.future.done():
                 continue
@@ -757,6 +761,9 @@ class VeBusClient:
             )
         if persistent:
             self._persistent_writes[setting] = time.monotonic()
+            self.unsaved_settings.discard(setting)
+        else:
+            self.unsaved_settings.add(setting)
         self._store_setting(setting, raw)
         return raw
 
@@ -836,6 +843,31 @@ class VeBusClient:
         """
         await self._command(CMD_SPECIAL, [F_RESET, 0, 0, 0, 0], None)
         self._readdress = True
+        # RAM settings return to the stored configuration.
+        self.unsaved_settings.clear()
+
+    async def save_settings(self) -> list[int]:
+        """Store the settings changed in RAM permanently (EEPROM).
+
+        Each changed setting is read and written back with the persistent
+        flag. Returns the settings that were saved. The EEPROM rate limit
+        applies to each of them, and is checked before anything is written.
+        """
+        self._require_firmware(MIN_FIRMWARE_RAM_ONLY_WRITE, "Saving settings")
+        settings = sorted(self.unsaved_settings)
+        for setting in settings:
+            self._check_persistent_rate(setting)
+        saved: list[int] = []
+        async with self._long_frame_session():
+            for setting in settings:
+                raw = _setting_value(
+                    await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
+                )
+                if raw is None:
+                    raise VeBusNotSupportedError(f"Setting {setting} cannot be read")
+                await self._write_setting_locked(setting, raw, persistent=True)
+                saved.append(setting)
+        return saved
 
     async def force_charge_state(self, state: ForceChargeState) -> DeviceStateInfo:
         """Force the charger into equalise, absorption or float."""

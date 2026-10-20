@@ -468,6 +468,14 @@
       },
       "checksum_errors": {
         "name": "Checksum errors"
+      },
+      "unsaved_changes": {
+        "name": "Unsaved setting changes",
+        "state_attributes": {
+          "settings": {
+            "name": "Settings"
+          }
+        }
       }
     },
     "binary_sensor": {
@@ -494,66 +502,6 @@
       },
       "virtual_switch": {
         "name": "Virtual switch"
-      }
-    },
-    "switch": {
-      "keep_awake": {
-        "name": "Keep awake"
-      },
-      "solar_wind_priority": {
-        "name": "Solar & wind priority"
-      },
-      "ess_external_control": {
-        "name": "ESS external control"
-      },
-      "ess_disable_charge": {
-        "name": "ESS disable charge"
-      },
-      "ess_disable_feed_in": {
-        "name": "ESS disable feed-in"
-      }
-    },
-    "number": {
-      "remote_current_limit": {
-        "name": "Remote AC input current limit"
-      },
-      "charge_current_limit": {
-        "name": "Charge current limit"
-      },
-      "configured_ac_input_current_limit": {
-        "name": "Configured AC input current limit"
-      },
-      "solar_wind_priority_voltage": {
-        "name": "Solar & wind priority voltage"
-      },
-      "configured_ac_input_2_current_limit": {
-        "name": "Configured AC input 2 current limit"
-      },
-      "ess_grid_setpoint": {
-        "name": "ESS grid setpoint"
-      },
-      "ess_grid_setpoint_phase": {
-        "name": "ESS grid setpoint {phase}"
-      },
-      "bms_charge_voltage": {
-        "name": "Battery limit charge voltage"
-      },
-      "bms_charge_current": {
-        "name": "Battery limit charge current"
-      },
-      "bms_discharge_voltage": {
-        "name": "Battery limit discharge voltage"
-      },
-      "bms_discharge_current": {
-        "name": "Battery limit discharge current"
-      }
-    },
-    "button": {
-      "force_absorption": {
-        "name": "Force absorption"
-      },
-      "force_float": {
-        "name": "Force float"
       }
     },
     "event": {
@@ -591,6 +539,112 @@
           }
         }
       }
+    },
+    "select": {
+      "remote_mode": {
+        "name": "Mode",
+        "state": {
+          "on": "On",
+          "off": "Off",
+          "charger_only": "Charger only",
+          "inverter_only": "Inverter only"
+        }
+      }
+    },
+    "switch": {
+      "keep_awake": {
+        "name": "Keep awake"
+      },
+      "solar_wind_priority": {
+        "name": "Solar & wind priority"
+      },
+      "ess_external_control": {
+        "name": "ESS external control"
+      },
+      "ess_disable_charge": {
+        "name": "ESS disable charge"
+      },
+      "ess_disable_feed_in": {
+        "name": "ESS disable feed-in"
+      },
+      "allow_critical_changes": {
+        "name": "Allow critical changes",
+        "state_attributes": {
+          "turns_off_at": {
+            "name": "Turns off at"
+          }
+        }
+      },
+      "passthru": {
+        "name": "Passthru"
+      },
+      "power_assist": {
+        "name": "PowerAssist"
+      },
+      "weak_ac_input": {
+        "name": "Weak AC input"
+      },
+      "ups_function": {
+        "name": "UPS function"
+      }
+    },
+    "number": {
+      "remote_current_limit": {
+        "name": "Remote AC input current limit"
+      },
+      "charge_current_limit": {
+        "name": "Charge current limit"
+      },
+      "configured_ac_input_current_limit": {
+        "name": "Configured AC input current limit"
+      },
+      "solar_wind_priority_voltage": {
+        "name": "Solar & wind priority voltage"
+      },
+      "configured_ac_input_2_current_limit": {
+        "name": "Configured AC input 2 current limit"
+      },
+      "ess_grid_setpoint": {
+        "name": "ESS grid setpoint"
+      },
+      "ess_grid_setpoint_phase": {
+        "name": "ESS grid setpoint {phase}"
+      },
+      "bms_charge_voltage": {
+        "name": "Battery limit charge voltage"
+      },
+      "bms_charge_current": {
+        "name": "Battery limit charge current"
+      },
+      "bms_discharge_voltage": {
+        "name": "Battery limit discharge voltage"
+      },
+      "bms_discharge_current": {
+        "name": "Battery limit discharge current"
+      },
+      "absorption_voltage": {
+        "name": "Absorption voltage"
+      },
+      "float_voltage": {
+        "name": "Float voltage"
+      }
+    },
+    "button": {
+      "force_absorption": {
+        "name": "Force absorption"
+      },
+      "force_float": {
+        "name": "Force float"
+      },
+      "force_equalise": {
+        "name": "Start equalisation"
+      },
+      "restart": {
+        "name": "Restart the Multi"
+      },
+      "save_settings": {
+        "name": "Save settings permanently"
+      }
     }
   },
   "exceptions": {
@@ -614,6 +668,12 @@
     },
     "controls_disabled": {
       "message": "This Victron VE.Bus entry is set up for monitoring only. Choose \"Monitor and control\" with Reconfigure to use this action."
+    },
+    "critical_locked": {
+      "message": "{action} is a critical change: {risk}. Turn on \"Allow critical changes\" first; it turns itself off again after 10 minutes."
+    },
+    "nothing_to_save": {
+      "message": "No settings were changed since the Multi last started or since the last save."
     }
   },
   "issues": {
@@ -658,6 +718,118 @@
         "acknowledge_risk": {
           "name": "Acknowledge risk",
           "description": "Must be true. Confirms that you accept that this can cut the power on the AC outputs."
+        }
+      }
+    },
+    "set_mode": {
+      "name": "Set mode",
+      "description": "Switches the Multi on, off, to charger only or to inverter only, keeping the current limit. Off, charger only and inverter only can cut the power on AC out 1 and AC out 2.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The Victron VE.Bus entry to control."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "The mode to switch to."
+        },
+        "acknowledge_risk": {
+          "name": "Acknowledge risk",
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+        }
+      }
+    },
+    "set_setting": {
+      "name": "Change a charger setting",
+      "description": "Changes a charger setting in RAM (lost when the Multi restarts) or permanently. Wrong charge voltages or currents can damage the battery.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The Victron VE.Bus entry to control."
+        },
+        "setting": {
+          "name": "Setting",
+          "description": "The setting to change."
+        },
+        "value": {
+          "name": "Value",
+          "description": "The new value, in V or A. It must be within the range the Multi reports."
+        },
+        "persistent": {
+          "name": "Store permanently (EEPROM)",
+          "description": "Store the change in the EEPROM so it survives a restart. Limited to once per 5 minutes per setting. Default: RAM only."
+        },
+        "acknowledge_risk": {
+          "name": "Acknowledge risk",
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+        }
+      }
+    },
+    "set_feature": {
+      "name": "Switch a feature",
+      "description": "Switches PowerAssist, weak AC input, the UPS function or solar & wind priority on or off, in RAM or permanently.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The Victron VE.Bus entry to control."
+        },
+        "feature": {
+          "name": "Feature",
+          "description": "The feature to switch."
+        },
+        "enabled": {
+          "name": "On",
+          "description": "Switch the feature on (true) or off (false)."
+        },
+        "persistent": {
+          "name": "Store permanently (EEPROM)",
+          "description": "Store the change in the EEPROM so it survives a restart. Limited to once per 5 minutes per setting. Default: RAM only."
+        },
+        "acknowledge_risk": {
+          "name": "Acknowledge risk",
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+        }
+      }
+    },
+    "equalise": {
+      "name": "Start equalisation",
+      "description": "Starts an equalisation charge. Never for lithium, gel or AGM batteries unless the manufacturer allows it.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The Victron VE.Bus entry to control."
+        },
+        "acknowledge_risk": {
+          "name": "Acknowledge risk",
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+        }
+      }
+    },
+    "restart": {
+      "name": "Restart the Multi",
+      "description": "Restarts the Multi. Its relays open, so AC out 1 and AC out 2 lose power for several seconds, and settings changed in RAM are lost.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The Victron VE.Bus entry to control."
+        },
+        "acknowledge_risk": {
+          "name": "Acknowledge risk",
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
+        }
+      }
+    },
+    "save_settings": {
+      "name": "Save settings permanently",
+      "description": "Stores the settings changed in RAM in the EEPROM, so they survive a restart. Limited to once per 5 minutes per setting.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Device",
+          "description": "The Victron VE.Bus entry to control."
+        },
+        "acknowledge_risk": {
+          "name": "Acknowledge risk",
+          "description": "Must be true. Confirms that you accept the risks of this change, described in the README."
         }
       }
     }

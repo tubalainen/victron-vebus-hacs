@@ -272,8 +272,8 @@ async def test_equalise(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     assert fake_mk3.device.forced == [1]
 
 
-async def test_old_entities_removed(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
-    """Critical entities of earlier versions are removed from the registry."""
+async def test_earlier_entities_return(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
+    """Entities removed in v0.5 come back in 1.1 with their old entity IDs."""
     entry = _entry()
     entry.add_to_hass(hass)
     registry = er.async_get(hass)
@@ -288,11 +288,8 @@ async def test_old_entities_removed(hass: HomeAssistant, fake_mk3: FakeMK3) -> N
             ("button", "force_equalise"),
         )
     ]
-    kept = registry.async_get_or_create(
-        "number", DOMAIN, "HQ123_0_charge_current_limit", config_entry=entry
-    ).entity_id
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     for entity_id in old:
-        assert registry.async_get(entity_id) is None, entity_id
-    assert registry.async_get(kept) is not None
+        assert registry.async_get(entity_id) is not None, entity_id
+        assert hass.states.get(entity_id) is not None, entity_id

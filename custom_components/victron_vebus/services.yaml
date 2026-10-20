@@ -29,3 +29,135 @@ set_remote_panel_state:
       default: false
       selector:
         boolean:
+
+set_mode:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: victron_vebus
+    mode:
+      required: true
+      selector:
+        select:
+          translation_key: mode
+          options:
+            - "on"
+            - "off"
+            - charger_only
+            - inverter_only
+    acknowledge_risk:
+      required: true
+      default: false
+      selector:
+        boolean:
+
+set_setting:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: victron_vebus
+    setting:
+      required: true
+      selector:
+        select:
+          translation_key: setting
+          options:
+            - absorption_voltage
+            - float_voltage
+            - charge_current_limit
+            - configured_ac_input_current_limit
+            - configured_ac_input_2_current_limit
+            - solar_wind_priority_voltage
+    value:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.01
+          mode: box
+    persistent:
+      required: false
+      default: false
+      selector:
+        boolean:
+    acknowledge_risk:
+      required: true
+      default: false
+      selector:
+        boolean:
+
+set_feature:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: victron_vebus
+    feature:
+      required: true
+      selector:
+        select:
+          translation_key: flag
+          options:
+            - power_assist
+            - weak_ac_input
+            - ups_function
+            - solar_wind_priority
+    enabled:
+      required: true
+      selector:
+        boolean:
+    persistent:
+      required: false
+      default: false
+      selector:
+        boolean:
+    acknowledge_risk:
+      required: true
+      default: false
+      selector:
+        boolean:
+
+equalise:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: victron_vebus
+    acknowledge_risk:
+      required: true
+      default: false
+      selector:
+        boolean:
+
+restart:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: victron_vebus
+    acknowledge_risk:
+      required: true
+      default: false
+      selector:
+        boolean:
+
+save_settings:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: victron_vebus
+    acknowledge_risk:
+      required: true
+      default: false
+      selector:
+        boolean:

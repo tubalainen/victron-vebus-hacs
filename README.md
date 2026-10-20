@@ -19,7 +19,7 @@ It is a ground-up rewrite inspired by
 project's known bugs and adds new features. See [docs/ANALYSIS.md](docs/ANALYSIS.md) for
 the analysis and the roadmap.
 
-> **Status:** v1.0. Monitoring and mode changes are in daily use on a MultiPlus-II with
+> **Status:** v1.1. Monitoring and mode changes are in daily use on a MultiPlus-II with
 > an MK3-USB. Some protocol details (the ESS setpoint, battery operational limits,
 > restart, permanent writes, multi-unit systems) have only been tested against a
 > protocol simulator so far; they are listed in [docs/ANALYSIS.md](docs/ANALYSIS.md) §5
@@ -84,18 +84,19 @@ the analysis and the roadmap.
 - **Monitor only, or monitor and control.** You choose this when you add the
   integration and can change it with *Reconfigure*. *Monitor only* never changes how
   the Multi operates.
-- **Controls** (only with *Monitor and control*):
-  - On the dashboard, for routine use and automations: the remote AC input current
-    limit, charge current limit, configured AC input limit(s), buttons to force
-    absorption or float, solar & wind priority, and ESS external control (grid
-    setpoint per phase, disable charge / feed-in).
-  - **Guided device actions** under *Configure → Device actions*, for everything that
-    can cut the power on the AC outputs, restart the Multi, change charge voltages or
-    write the EEPROM: mode, passthru, charge voltages and other settings (in RAM or
-    permanently), PowerAssist / weak AC input / UPS function, equalisation and restart.
-    Each action shows its risks in a dialog and must be confirmed.
-  - The `victron_vebus.set_remote_panel_state` action for automations, which requires
+- **Controls** (only with *Monitor and control*), all usable from the device page,
+  dashboards, automations and scripts. See [Controlling the Multi](#controlling-the-multi).
+  - **Routine controls:** the remote AC input current limit, charge current limit,
+    configured AC input limit(s), force absorption or float, solar & wind priority, and
+    ESS external control (grid setpoint per phase, disable charge / feed-in).
+  - **Critical controls**, behind the *Allow critical changes* lock: mode, passthru,
+    absorption and float voltage, PowerAssist, weak AC input, UPS function,
+    equalisation, restart and *Save settings permanently*.
+  - **Actions for automations:** `set_mode`, `set_setting`, `set_feature`, `equalise`,
+    `restart`, `save_settings` and `set_remote_panel_state`, each requiring
     `acknowledge_risk: true`.
+  - **Guided device actions** under *Configure → Device actions*: the same changes
+    with a full explanation of their risks and a confirmation.
 - **Battery operational limits** (advanced, lithium only, separate option): the Multi
   receives charge/discharge voltage and current limits, like it would from a BMS.
 
@@ -165,12 +166,16 @@ settings.
 | *Unit N* AC input/output voltage, current and power; battery voltage, current and power; device state; energy (as for the system) | Multi-unit systems only, one device per unit (*Victron VE.Bus unit N*). Units are read in turn, one per poll. |
 | Link quality, Request timeouts, Checksum errors | Diagnostic. See [Connection health](#connection-health). Checksum errors is *(disabled)*. |
 | ESS active setpoint (L1–L3) | Diagnostic, when the ESS assistant is installed. The setpoint the assistant uses; positive = taken from the grid. |
-| PowerAssist, Weak AC input, UPS function (binary sensors) | Diagnostic, read-only. Change them with the guided device actions. |
+| PowerAssist, Weak AC input, UPS function (binary sensors) | Diagnostic, read-only. With *Monitor and control* there are also switches. |
 | ESS external control (switch), ESS grid setpoint (L1–L3) (number), ESS disable charge / feed-in (switches) | *Monitor and control* with the ESS assistant installed. See below. |
 | Battery limit charge/discharge voltage/current (numbers) | Only with *Enable battery operational limits*; firmware 415+. See below. |
-| Remote AC input current limit (number) | *Monitor and control*. The mode is changed with the guided device actions. |
-| Force absorption / float (buttons) | *Monitor and control*; firmware 400+. Equalisation is a guided device action. |
-| Charge current limit, Configured AC input (2) current limit (numbers) | *Monitor and control*; firmware 412+. RAM only. Charge voltages are guided device actions. |
+| Remote AC input current limit (number) | *Monitor and control*. |
+| Force absorption / float (buttons) | *Monitor and control*; firmware 400+. |
+| Charge current limit, Configured AC input (2) current limit (numbers) | *Monitor and control*; firmware 412+. RAM only. |
+| Allow critical changes (switch) | *Monitor and control*. Off by default; turns itself off after 10 minutes. See [Controlling the Multi](#controlling-the-multi). |
+| Mode (select), Passthru, PowerAssist, Weak AC input, UPS function (switches), Absorption / Float voltage (numbers) | *Monitor and control*; critical. Settings need firmware 412+ and change RAM only. |
+| Start equalisation, Restart the Multi, Save settings permanently (buttons) | *Monitor and control*; critical. Equalisation needs firmware 400+, saving 412+. |
+| Unsaved setting changes | Diagnostic, *Monitor and control*. The number of settings changed in RAM only, listed in the `settings` attribute. |
 | Solar & wind priority (switch), Solar & wind priority voltage (number) | *Monitor and control*; firmware 506+ and the feature configured. RAM only. |
 
 ### Energy
@@ -249,12 +254,85 @@ awake** on (the default), the integration sets the MK3's *standby* flag, which k
 the device awake. It resends the flag on every poll because the flag is lost whenever
 the device loses power. A switched-off device that is kept awake uses a few watts more.
 
+### Controlling the Multi
+
+With *Monitor and control*, every control is an entity on the Multi's device page, so
+it can be used from dashboards, automations, scripts and voice assistants.
+
+**Routine controls** work directly: current limits, charge current, force absorption or
+float, solar & wind priority and ESS.
+
+**Critical controls** can cut the power on AC out 1 and AC out 2, restart the Multi,
+change battery charge voltages or write the EEPROM. They are locked:
+
+1. Turn on **Allow critical changes** (under *Configuration* on the device page). It
+   turns itself off again after 10 minutes; its `turns_off_at` attribute says when.
+2. Use the critical control: **Mode**, **Passthru**, **PowerAssist**, **Weak AC
+   input**, **UPS function**, **Absorption voltage**, **Float voltage**, **Start
+   equalisation**, **Restart the Multi** or **Save settings permanently**.
+
+While the lock is off, a critical control refuses the change and says what could
+happen, for example *"Mode inverter only is a critical change: the Multi disconnects
+from the grid and AC out 2 loses power"*. The table below lists the risks.
+
+**RAM first, then save.** Setting changes from entities go to the Multi's RAM only:
+they apply immediately and are lost when the Multi restarts, so they are safe to try.
+**Unsaved setting changes** shows how many there are. **Save settings permanently**
+stores them in the EEPROM (limited to once per setting every 5 minutes).
+
+**Passthru** sets the remote AC input current limit to 0 A. Turning it off restores the
+last limit (or the configured AC input limit). Changing the mode while in passthru keeps
+passthru.
+
+For an extra confirmation on a dashboard, use a card's own confirmation, for example
+a button card:
+
+```yaml
+type: button
+name: Restart the Multi
+entity: button.victron_ve_bus_restart_the_multi
+tap_action:
+  action: perform-action
+  perform_action: button.press
+  target:
+    entity_id: button.victron_ve_bus_restart_the_multi
+  confirmation:
+    text: Restarting cuts the power on AC out 1 and AC out 2 for several seconds. Continue?
+```
+
+#### Actions for automations and scripts
+
+Automations don't use the lock. Every action needs the entry (`config_entry_id`, picked
+in the UI editor) and `acknowledge_risk: true`, and only works with *Monitor and
+control*.
+
+| Action | Fields |
+|---|---|
+| `victron_vebus.set_mode` | `mode`: `on`, `off`, `charger_only`, `inverter_only` |
+| `victron_vebus.set_setting` | `setting`: `absorption_voltage`, `float_voltage`, `charge_current_limit`, `configured_ac_input_current_limit`, `configured_ac_input_2_current_limit`, `solar_wind_priority_voltage`; `value`; `persistent` (default false) |
+| `victron_vebus.set_feature` | `feature`: `power_assist`, `weak_ac_input`, `ups_function`, `solar_wind_priority`; `enabled`; `persistent` (default false) |
+| `victron_vebus.equalise` | |
+| `victron_vebus.restart` | |
+| `victron_vebus.save_settings` | Stores the settings changed in RAM. |
+| `victron_vebus.set_remote_panel_state` | `mode`, optional `current_limit` (0 = passthru) |
+
+```yaml
+# Charger only at night, normal operation in the morning.
+action: victron_vebus.set_mode
+data:
+  config_entry_id: 01J...
+  mode: charger_only
+  acknowledge_risk: true
+```
+
+Don't automate `persistent: true` or `save_settings`: the EEPROM endures a limited
+number of writes.
+
 ### Guided device actions (Configure → Device actions)
 
-Everything that can cut the power on AC out 1 and AC out 2, restart the Multi, change
-battery charge voltages or write the EEPROM is only available here. Each action opens a
-dialog that lists its risks; nothing is sent until you tick *I understand the risks*
-and submit.
+The same critical changes, with a full explanation: each action opens a dialog that
+lists its risks, and nothing is sent until you tick *I understand the risks* and
+submit. Charger settings and features can be written in RAM or permanently here too.
 
 | Action | What can happen |
 |---|---|
@@ -301,8 +379,8 @@ device restarts.
 ### Changing settings (beta)
 
 The setting numbers and switches on the dashboard change the device's settings **in RAM
-only**, never its stored (EEPROM) configuration (only the guided device actions can
-write permanently). A change applies immediately and is lost when the
+only**, never its stored (EEPROM) configuration, until you press *Save settings
+permanently* (or use `persistent: true` or the guided device actions). A change applies immediately and is lost when the
 device restarts, which then goes back to the configuration made with VictronConnect
 or VEConfigure. Because nothing is written to the EEPROM, automations can change these
 settings as often as needed without wearing it out.
@@ -326,9 +404,9 @@ What the switches do:
 - **Solar & wind priority off** makes the device charge the battery to the full
   absorption voltage again ("charge to 100%"). Switch it back on afterwards, or restart
   the device.
-- PowerAssist, weak AC input and UPS function are shown as read-only sensors; they are
-  changed with the guided device actions because they affect how the Multi transfers
-  between grid and inverter.
+- PowerAssist, weak AC input and UPS function are critical switches (behind *Allow
+  critical changes*) because they affect how the Multi transfers between grid and
+  inverter.
 
 Requirements:
 

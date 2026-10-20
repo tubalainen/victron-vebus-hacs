@@ -67,9 +67,8 @@ async def test_force_charge_buttons(hass: HomeAssistant, fake_mk3: FakeMK3) -> N
 async def test_setting_numbers(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     """Numbers write settings in RAM only, within the device's range."""
     await _setup(hass, _entry())
-    # Charge voltages are guided device actions, not dashboard numbers.
-    assert hass.states.get(f"number.{PREFIX}_float_voltage") is None
-    assert hass.states.get(f"number.{PREFIX}_absorption_voltage") is None
+    # Charge voltages are numbers too (since 1.1), behind the critical lock.
+    assert hass.states.get(f"number.{PREFIX}_float_voltage") is not None
     entity_id = f"number.{PREFIX}_charge_current_limit"
     state = hass.states.get(entity_id)
     assert state is not None
@@ -101,9 +100,9 @@ async def test_flag_binary_sensors(hass: HomeAssistant, fake_mk3: FakeMK3) -> No
     assert _state(hass, f"binary_sensor.{PREFIX}_powerassist") == "on"
     assert _state(hass, f"binary_sensor.{PREFIX}_weak_ac_input") == "off"
     assert _state(hass, f"binary_sensor.{PREFIX}_ups_function") == "on"
-    assert hass.states.get(f"switch.{PREFIX}_powerassist") is None
-    assert hass.states.get(f"switch.{PREFIX}_weak_ac_input") is None
-    assert hass.states.get(f"switch.{PREFIX}_ups_function") is None
+    # Since 1.1 they can also be switched, behind the critical lock.
+    assert _state(hass, f"switch.{PREFIX}_powerassist") == "on"
+    assert _state(hass, f"switch.{PREFIX}_ups_function") == "on"
 
 
 async def test_solar_wind_priority(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:

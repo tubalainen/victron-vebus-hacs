@@ -16,6 +16,8 @@ from .vebus import ForceChargeState, Mode, Setting, SettingFlag
 from .vebus.const import MIN_PERSISTENT_WRITE_INTERVAL
 
 OUTPUTS = "AC out 1 and AC out 2"
+# Current limit to leave passthru with when no other limit is known (A).
+DEFAULT_CURRENT_LIMIT = 16.0
 
 RESTART_WARNING = f"""**The Multi restarts.**
 
@@ -165,6 +167,41 @@ SETTING_CHOICES: dict[str, Setting] = {
 }
 
 
+# One-line risks, shown when a critical change is refused because "Allow
+# critical changes" is off (entities), next to the full warnings above.
+MODE_RISKS: dict[Mode, str] = {
+    Mode.OFF: f"{OUTPUTS} lose power",
+    Mode.CHARGER_ONLY: f"{OUTPUTS} lose power on a grid failure",
+    Mode.INVERTER_ONLY: "the Multi disconnects from the grid and AC out 2 loses power",
+    Mode.ON: "the Multi starts and its relays switch",
+}
+PASSTHRU_RISK = (
+    "the charger stops; with PowerAssist on the Multi supplies the loads from the "
+    "battery instead"
+)
+PASSTHRU_LEAVE_RISK = "the charger can run again and take power from the grid"
+SETTING_RISK = "a wrong value can damage the battery or trip a breaker"
+FLAG_RISKS: dict[tuple[SettingFlag, bool], str] = {
+    (SettingFlag.ASSIST_ENABLED, True): "the Multi adds battery power to the grid",
+    (SettingFlag.ASSIST_ENABLED, False): "the grid breaker can trip under high load",
+    (SettingFlag.WEAK_AC_INPUT, True): "the charge current can be lower",
+    (SettingFlag.WEAK_AC_INPUT, False): "a poor AC input, such as a generator, can "
+    "be rejected",
+    (SettingFlag.DISABLE_WAVE_CHECK, False): "a poor AC input can be rejected more "
+    "often",
+    (SettingFlag.DISABLE_WAVE_CHECK, True): f"{OUTPUTS} can see a short interruption "
+    "on a grid failure",
+    (SettingFlag.SOLAR_WIND_PRIORITY, True): "the battery is held below the "
+    "absorption voltage",
+    (SettingFlag.SOLAR_WIND_PRIORITY, False): "the battery is charged from the grid",
+}
+EQUALISE_RISK = (
+    "charging above the absorption voltage can damage lithium, gel and AGM batteries"
+)
+RESTART_RISK = f"the relays open and {OUTPUTS} lose power for several seconds"
+SAVE_RISK = "the changed settings replace the stored configuration (EEPROM)"
+
+
 @dataclass(frozen=True)
 class PendingAction:
     """An action waiting for the user to confirm its risks."""
@@ -204,14 +241,18 @@ def passthru_warning(coordinator: VeBusCoordinator) -> str:
 async def async_restart(coordinator: VeBusCoordinator) -> str:
     """Restart the Multi."""
     await coordinator.client.restart_device()
+    # The remote panel state is reset with the device.
+    coordinator.passthru = False
     return "The restart command was sent. The Multi reconnects by itself."
 
 
 async def async_set_mode(coordinator: VeBusCoordinator, mode: Mode) -> str:
-    """Change the remote panel mode, keeping the current limit."""
+    """Change the remote panel mode, keeping the current limit (or passthru)."""
     config = coordinator.data.config
     limit = None
-    if config is not None and not config.dmc_dedicated:
+    if coordinator.passthru:
+        limit = 0.0
+    elif config is not None and not config.dmc_dedicated:
         limit = config.actual_current_limit
     await coordinator.client.set_remote_panel_state(mode, limit)
     await coordinator.async_refresh_config()
@@ -226,6 +267,7 @@ async def async_set_passthru(
     mode = config.mode if config is not None and config.mode else Mode.ON
     current = 0.0 if enter else limit
     await coordinator.client.set_remote_panel_state(mode, current)
+    coordinator.passthru = enter
     await coordinator.async_refresh_config()
     if enter:
         return "The remote AC input current limit was set to 0 A."
@@ -256,8 +298,62 @@ async def async_write_flag(
     return f"The setting was switched {'on' if enabled else 'off'} {where}."
 
 
+def setting_name(setting: int) -> str:
+    """Return a readable name of a setting ID."""
+    for key, choice in SETTING_CHOICES.items():
+        if choice == setting:
+            return key.replace("_", " ")
+    for key, flag in FLAG_CHOICES.items():
+        if flag.setting == setting:
+            return f"flags ({key.replace('_', ' ')}, ...)"
+    try:
+        return Setting(setting).name.lower().replace("_", " ")
+    except ValueError:
+        return f"setting {setting}"
+
+
+async def async_save_settings(coordinator: VeBusCoordinator) -> str:
+    """Store the settings changed in RAM permanently."""
+    saved = await coordinator.client.save_settings()
+    coordinator.async_set_updated_data(coordinator.client.state)
+    if not saved:
+        return "There were no changed settings to save."
+    names = ", ".join(setting_name(setting) for setting in saved)
+    return f"Saved permanently: {names}."
+
+
 async def async_equalise(coordinator: VeBusCoordinator) -> str:
     """Force an equalisation charge."""
     await coordinator.client.force_charge_state(ForceChargeState.EQUALISE)
     coordinator.async_set_updated_data(coordinator.client.state)
     return "Equalisation was started."
+
+
+def check_setting(
+    coordinator: VeBusCoordinator, setting: Setting, value: float
+) -> str | None:
+    """Return an error if the value is outside the device range or inconsistent."""
+    info = coordinator.client.setting_info.get(setting)
+    if info is None or info.minimum is None or info.maximum is None:
+        return "the range of this setting is unknown"
+    low, high = info.decode(info.minimum), info.decode(info.maximum)
+    if not low <= value <= high:
+        return f"{value:g} is outside {low:g}..{high:g}"
+    state = coordinator.data
+    absorption = state.setting_value(Setting.U_BAT_ABSORPTION)
+    float_voltage = state.setting_value(Setting.U_BAT_FLOAT)
+    if setting == Setting.U_BAT_FLOAT and absorption is not None and value > absorption:
+        return f"float voltage above the absorption voltage ({absorption:g} V)"
+    if (
+        setting == Setting.U_BAT_ABSORPTION
+        and float_voltage is not None
+        and value < float_voltage
+    ):
+        return f"absorption voltage below the float voltage ({float_voltage:g} V)"
+    if (
+        setting == Setting.SOLAR_WIND_PRIORITY_VOLTAGE
+        and absorption is not None
+        and value > absorption
+    ):
+        return f"above the absorption voltage ({absorption:g} V)"
+    return None

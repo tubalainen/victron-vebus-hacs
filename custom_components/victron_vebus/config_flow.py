@@ -39,6 +39,7 @@ from .actions import (
     RESTART_WARNING,
     SETTING_CHOICES,
     PendingAction,
+    check_setting,
     flag_warning,
     passthru_warning,
     setting_warning,
@@ -546,7 +547,7 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
             setting = choices[user_input["setting"]]
             value = float(user_input["value"])
             persistent = bool(user_input["persistent"])
-            error = _check_setting(coordinator, setting, value)
+            error = check_setting(coordinator, setting, value)
             if error is None:
                 name = user_input["setting"].replace("_", " ")
                 return await self._async_confirm(
@@ -671,36 +672,6 @@ def _usage_schema() -> vol.Schema:
             )
         }
     )
-
-
-def _check_setting(
-    coordinator: VeBusCoordinator, setting: Setting, value: float
-) -> str | None:
-    """Return an error if the value is outside the device range or inconsistent."""
-    info = coordinator.client.setting_info.get(setting)
-    if info is None or info.minimum is None or info.maximum is None:
-        return "the range of this setting is unknown"
-    low, high = info.decode(info.minimum), info.decode(info.maximum)
-    if not low <= value <= high:
-        return f"{value:g} is outside {low:g}..{high:g}"
-    state = coordinator.data
-    absorption = state.setting_value(Setting.U_BAT_ABSORPTION)
-    float_voltage = state.setting_value(Setting.U_BAT_FLOAT)
-    if setting == Setting.U_BAT_FLOAT and absorption is not None and value > absorption:
-        return f"float voltage above the absorption voltage ({absorption:g} V)"
-    if (
-        setting == Setting.U_BAT_ABSORPTION
-        and float_voltage is not None
-        and value < float_voltage
-    ):
-        return f"absorption voltage below the float voltage ({float_voltage:g} V)"
-    if (
-        setting == Setting.SOLAR_WIND_PRIORITY_VOLTAGE
-        and absorption is not None
-        and value > absorption
-    ):
-        return f"above the absorption voltage ({absorption:g} V)"
-    return None
 
 
 def _setting_ranges(coordinator: VeBusCoordinator, choices: dict[str, Setting]) -> str:
