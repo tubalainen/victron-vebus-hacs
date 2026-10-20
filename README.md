@@ -19,7 +19,7 @@ It is a ground-up rewrite inspired by
 project's known bugs and adds new features. See [docs/ANALYSIS.md](docs/ANALYSIS.md) for
 the analysis and the roadmap.
 
-> **Status:** v0.6 beta. It is developed and tested against a MultiPlus-II using a
+> **Status:** v0.7 beta. It is developed and tested against a MultiPlus-II using a
 > protocol simulator, and has not yet been verified on real hardware. Treat everything
 > beyond monitoring as beta: try the controls with the command line tool first (see
 > below), and please report your results.
@@ -62,10 +62,17 @@ the analysis and the roadmap.
   - Inverter output voltage, low battery shutdown and restart voltage.
   - The eight front panel LEDs, each off, on or blinking.
   - A diagnostics download with communication statistics and the last raw frames.
+  - **Connection health:** link quality (share of answered requests), request
+    timeouts and checksum errors, plus a repair issue while the connection is poor.
+  - A single missed or garbled reply no longer makes values flicker to "unknown":
+    the last good reading is kept through up to two missed replies.
 - **Multi-unit systems** (parallel, split-phase and three-phase).
   - All units on the VE.Bus are found at startup. Each gets its own device, linked to
     the system device, with AC and battery values, power and device state.
   - The system's AC input, AC output and battery power are the totals over all units.
+  - Energy sensors for every unit, besides the system totals.
+  - Alarms are system-wide: the MK3 protocol reports the alarm LEDs for the whole
+    VE.Bus system, not per unit.
   - Each phase gets its apparent power.
 - **Quattro:** the second AC input's current limit and which input is active.
 - **Phoenix/Compact inverters** that don't send the standard info frames: values are
@@ -153,7 +160,8 @@ settings.
 | Solar & wind priority voltage | Diagnostic. Only on firmware 506+ with the feature configured. |
 | Configured AC input 2 current limit | Diagnostic. Only on devices with a second AC input (Quattro). |
 | AC input / output apparent power L1–L3 | Multi-phase systems only. Voltage × current per phase, from the info frames. |
-| *Unit N* AC input/output voltage, current and power; battery voltage, current and power; device state | Multi-unit systems only, one device per unit (*Victron VE.Bus unit N*). Units are read in turn, one per poll. |
+| *Unit N* AC input/output voltage, current and power; battery voltage, current and power; device state; energy (as for the system) | Multi-unit systems only, one device per unit (*Victron VE.Bus unit N*). Units are read in turn, one per poll. |
+| Link quality, Request timeouts, Checksum errors | Diagnostic. See [Connection health](#connection-health). Checksum errors is *(disabled)*. |
 | ESS active setpoint (L1–L3) | Diagnostic, when the ESS assistant is installed. The setpoint the assistant uses; positive = taken from the grid. |
 | PowerAssist, Weak AC input, UPS function (binary sensors) | Diagnostic, read-only. Change them with the guided device actions. |
 | ESS external control (switch), ESS grid setpoint (L1–L3) (number), ESS disable charge / feed-in (switches) | *Monitor and control* with the ESS assistant installed. See below. |
@@ -184,7 +192,8 @@ time. The totals are kept across restarts.
   chargers or DC loads connected directly to the battery.
 - AC output energy counts power going to the loads; power fed back from the AC output
   (e.g. an AC-coupled PV inverter) is not counted.
-- In multi-unit systems the energy is the total of all units.
+- In multi-unit systems the system energy is the total of all units, and every unit
+  has its own energy sensors too.
 
 ### Alarm notifications
 
@@ -214,6 +223,21 @@ actions:
         {{ state_attr('event.victron_ve_bus_alarm', 'alarm') }}:
         {{ state_attr('event.victron_ve_bus_alarm', 'level') }}
 ```
+
+### Connection health
+
+At 2400 baud the MK3 link is slow, and a reply can be lost to a bad cable, interference
+or other devices busy on the VE.Bus.
+
+- **Link quality** is the share of requests answered in the last 5 minutes. It should
+  be 100% or very close to it.
+- **Request timeouts** counts the requests that got no reply. **Checksum errors**
+  *(disabled)* counts bytes skipped to recover from corrupted data.
+- A value keeps its last good reading through up to two missed replies before it
+  becomes *unknown*.
+- Below 90% (with at least 100 requests) a repair issue lists what to check. It
+  disappears once the link quality is back above 95%.
+- These sensors stay available while the device is unreachable.
 
 ### Keep awake
 

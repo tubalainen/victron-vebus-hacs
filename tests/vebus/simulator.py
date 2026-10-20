@@ -168,11 +168,20 @@ class SimulatedMultiPlus:
     dc_charger_current: int = 123  # 0.1 A
     dc_inverter_current: int = 0
     received: list[bytes] = field(default_factory=list)
+    # Requests to leave unanswered, by command letter ('F' 5 as "F5"), with
+    # the number of replies still to drop.
+    drop_replies: dict[str, int] = field(default_factory=dict)
 
     def handle(self, frame: Frame) -> list[bytes]:
         """Return the reply frames for a request."""
         self.received.append(frame.to_bytes())
         if self.asleep or not frame.is_mk:
+            return []
+        key = chr(frame.command or 0)
+        if key == "F" and frame.data:
+            key += str(frame.data[0])
+        if self.drop_replies.get(key):
+            self.drop_replies[key] -= 1
             return []
         cmd = chr(frame.command or 0)
         data = frame.data

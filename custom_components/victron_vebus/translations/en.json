@@ -459,6 +459,15 @@
           "on": "On",
           "blink": "Blinking"
         }
+      },
+      "link_quality": {
+        "name": "Link quality"
+      },
+      "request_timeouts": {
+        "name": "Request timeouts"
+      },
+      "checksum_errors": {
+        "name": "Checksum errors"
       }
     },
     "binary_sensor": {
@@ -623,6 +632,10 @@
     "temperature_alarm": {
       "title": "{name}: high temperature alarm",
       "description": "The Multi reports a **high temperature alarm** and switches off to protect itself, so **AC out 1 and AC out 2 can lose power**.\n\nCheck the ventilation around the Multi, its fans and the ambient temperature, and reduce the load or charge current. (With a battery temperature sensor this alarm can also mean that the battery is too hot or too cold.)\n\nThis message disappears by itself when the alarm clears. To stop these messages, turn off *Show alarms as repair issues* in the integration settings."
+    },
+    "poor_link": {
+      "title": "{name}: poor connection to the VE.Bus device",
+      "description": "Only {rate}% of the requests to the VE.Bus device on {device} were answered in the last 5 minutes. Values can be missing or late, and commands can fail.\n\nCheck:\n- the RJ45 cable between the MK3 and the Multi: firmly plugged in, not damaged, and not running alongside power cables;\n- the USB connection of the MK3: try another port or a short USB extension, away from USB 3 ports and other sources of interference;\n- whether other devices on the VE.Bus (a GX device, another MK3 or VictronConnect) are busy at the same time;\n- a longer polling interval in the integration settings.\n\nThe *Link quality* and *Request timeouts* sensors show how the connection is doing. This message disappears by itself when the connection is good again."
     }
   },
   "services": {

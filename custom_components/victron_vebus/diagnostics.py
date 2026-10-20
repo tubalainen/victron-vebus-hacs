@@ -19,6 +19,8 @@ async def async_get_config_entry_diagnostics(
     coordinator = runtime.coordinator
     stats = asdict(client.stats)
     stats["last_frames"] = list(client.stats.last_frames)
+    stats["checksum_errors"] = client.checksum_errors
+    stats["link_quality"] = coordinator.link.success_rate
     return {
         "entry": {
             "data": dict(entry.data),

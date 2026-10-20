@@ -145,6 +145,15 @@
           "on": "mdi:led-on",
           "blink": "mdi:led-variant-on"
         }
+      },
+      "link_quality": {
+        "default": "mdi:lan-connect"
+      },
+      "request_timeouts": {
+        "default": "mdi:timer-sand-complete"
+      },
+      "checksum_errors": {
+        "default": "mdi:alert-circle-outline"
       }
     },
     "binary_sensor": {

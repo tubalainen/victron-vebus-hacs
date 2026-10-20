@@ -99,6 +99,10 @@ IDLE_TIMEOUT = 5.0
 INIT_ATTEMPTS = 3
 # Consecutive failed polls before the device is considered unreachable.
 MAX_FAILED_POLLS = 3
+# A value that could not be read keeps its last good reading through this
+# many consecutive failures before it becomes unknown, so a single missed or
+# garbled reply does not make entities flicker to "unknown".
+MAX_STALE_READS = 2
 
 RECONNECT_MIN_DELAY = 1.0
 RECONNECT_MAX_DELAY = 30.0
@@ -204,6 +208,8 @@ class ClientStatistics:
 
     frames_received: int = 0
     frames_sent: int = 0
+    # Requests that expect a reply; ``timeouts`` of them got none.
+    requests: int = 0
     unsolicited_frames: int = 0
     timeouts: int = 0
     connects: int = 0
@@ -273,6 +279,8 @@ class VeBusClient:
         self.units: tuple[int, ...] = (address,)
         self.unit_firmware: dict[int, FirmwareVersion | None] = {}
         self._unit_queue: deque[int] = deque()
+        # Consecutive failed reads per value (see MAX_STALE_READS).
+        self._read_failures: dict[str, int] = {}
         # False when the device does not answer info frames ('F' 0..4).
         self.info_frames = True
         # RAM ID of the ESS assistant record by address, if installed.
@@ -404,6 +412,7 @@ class VeBusClient:
             await self._send(frame)
             return None
         loop = asyncio.get_running_loop()
+        self.stats.requests += 1
         waiter = _Waiter(predicate, loop.create_future())
         self._waiters.append(waiter)
         try:
@@ -1275,16 +1284,20 @@ class VeBusClient:
         for attr, func in optional_reads:
             try:
                 setattr(state, attr, await func())
+                self._read_ok(attr)
             except (VeBusTimeoutError, VeBusNotSupportedError, DecodeError) as err:
                 _LOGGER.debug("Reading %s failed: %s", attr, err)
-                setattr(state, attr, None)
+                if self._read_failed(attr):
+                    setattr(state, attr, None)
 
         try:
             state.ram.update(await self.read_ram_vars(FAST_RAM_VARS))
+            self._read_ok("power")
         except (VeBusTimeoutError, VeBusNotSupportedError) as err:
             _LOGGER.debug("Reading power failed: %s", err)
-            for var in FAST_RAM_VARS:
-                state.ram[var] = None
+            if self._read_failed("power"):
+                for var in FAST_RAM_VARS:
+                    state.ram[var] = None
 
         if full:
             self._slow_queue.clear()
@@ -1316,17 +1329,34 @@ class VeBusClient:
                     self._unit_queue.extend(self.units)
                 addresses = [self._unit_queue.popleft()]
             for address in addresses:
+                key = f"unit_{address}"
                 try:
                     state.units[address] = await self.read_unit(address)
+                    self._read_ok(key)
                 except (VeBusTimeoutError, VeBusNotSupportedError, DecodeError) as err:
                     _LOGGER.debug("Reading unit %s failed: %s", address, err)
-                    state.units[address] = UnitState(
-                        address, firmware=self.unit_firmware.get(address)
-                    )
+                    if self._read_failed(key) or address not in state.units:
+                        state.units[address] = UnitState(
+                            address, firmware=self.unit_firmware.get(address)
+                        )
 
         state.timestamp = time.monotonic()
         self.state = state
         return state
+
+    @property
+    def checksum_errors(self) -> int:
+        """Return the number of bytes skipped to resynchronise the stream."""
+        return self._decoder.checksum_errors
+
+    def _read_ok(self, key: str) -> None:
+        self._read_failures.pop(key, None)
+
+    def _read_failed(self, key: str) -> bool:
+        """Count a failed read; True once the last good value is too old."""
+        failures = self._read_failures.get(key, 0) + 1
+        self._read_failures[key] = failures
+        return failures > MAX_STALE_READS
 
     async def refresh_config(self) -> VeBusState:
         """Re-read the MasterMultiLED frame, e.g. after changing the mode."""

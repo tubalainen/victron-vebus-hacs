@@ -35,6 +35,13 @@ ESS_SETPOINT_LIMIT: Final = 30000
 
 # Raise a repair issue when the device has been unreachable for this long.
 UNAVAILABLE_ISSUE_DELAY: Final = 300
+# Link quality: share of answered requests over this window (seconds). A
+# repair issue is raised below the first rate (with enough requests to be
+# sure) and removed again above the second.
+LINK_QUALITY_WINDOW: Final = 300
+LINK_ISSUE_MIN_REQUESTS: Final = 100
+LINK_ISSUE_BELOW: Final = 90.0
+LINK_ISSUE_CLEAR: Final = 95.0
 # Power samples further apart than this (or 5 polling intervals, if longer)
 # are not integrated into the energy sensors.
 ENERGY_MIN_GAP: Final = 60

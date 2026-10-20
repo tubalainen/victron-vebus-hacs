@@ -532,25 +532,17 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
 
 @dataclass(frozen=True, kw_only=True)
 class VeBusEnergySensorEntityDescription(SensorEntityDescription):
-    """Describes an energy counter integrated from a power reading."""
+    """Describes an energy counter integrated from a power RAM variable."""
 
-    power_fn: Callable[[VeBusState], float | None]
+    var: RamVar
+    # Sign applied to the RAM variable to get the power as shown.
+    sign: float = 1.0
     # +1 counts positive power, -1 counts negative power.
     direction: int
 
 
-def _power(var: RamVar, sign: float = 1.0) -> Callable[[VeBusState], float | None]:
-    """Return a power RAM variable summed over all units."""
-
-    def value(state: VeBusState) -> float | None:
-        total = state.total_ram_value(var)
-        return None if total is None else sign * total
-
-    return value
-
-
 def _energy(
-    key: str, power_fn: Callable[[VeBusState], float | None], direction: int
+    key: str, var: RamVar, sign: float, direction: int
 ) -> VeBusEnergySensorEntityDescription:
     return VeBusEnergySensorEntityDescription(
         key=key,
@@ -559,19 +551,56 @@ def _energy(
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
-        power_fn=power_fn,
+        var=var,
+        sign=sign,
         direction=direction,
     )
 
 
-# AC input power is positive while taking power from the grid; battery
-# (DC side) power is positive while charging.
+# AC input power (RAM 15 negated) is positive while taking power from the
+# grid; battery (DC side) power is positive while charging. Created for the
+# system (totals over all units) and, in multi-unit systems, for every unit.
 ENERGY_SENSORS: tuple[VeBusEnergySensorEntityDescription, ...] = (
-    _energy("ac_input_energy_imported", _power(RamVar.INVERTER_POWER_2, -1), 1),
-    _energy("ac_input_energy_exported", _power(RamVar.INVERTER_POWER_2, -1), -1),
-    _energy("ac_output_energy", _power(RamVar.OUTPUT_POWER), 1),
-    _energy("battery_energy_charged", _power(RamVar.INVERTER_POWER_1), 1),
-    _energy("battery_energy_discharged", _power(RamVar.INVERTER_POWER_1), -1),
+    _energy("ac_input_energy_imported", RamVar.INVERTER_POWER_2, -1, 1),
+    _energy("ac_input_energy_exported", RamVar.INVERTER_POWER_2, -1, -1),
+    _energy("ac_output_energy", RamVar.OUTPUT_POWER, 1, 1),
+    _energy("battery_energy_charged", RamVar.INVERTER_POWER_1, 1, 1),
+    _energy("battery_energy_discharged", RamVar.INVERTER_POWER_1, 1, -1),
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class VeBusLinkSensorEntityDescription(SensorEntityDescription):
+    """Describes a sensor of the link between the MK3 and the device."""
+
+    value_fn: Callable[[VeBusCoordinator], StateType]
+
+
+LINK_SENSORS: tuple[VeBusLinkSensorEntityDescription, ...] = (
+    VeBusLinkSensorEntityDescription(
+        key="link_quality",
+        translation_key="link_quality",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda c: c.link.success_rate,
+    ),
+    VeBusLinkSensorEntityDescription(
+        key="request_timeouts",
+        translation_key="request_timeouts",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda c: c.client.stats.timeouts,
+    ),
+    VeBusLinkSensorEntityDescription(
+        key="checksum_errors",
+        translation_key="checksum_errors",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda c: c.client.checksum_errors,
+    ),
 )
 
 
@@ -774,6 +803,9 @@ async def async_setup_entry(
     entities.extend(
         VeBusEnergySensor(coordinator, description) for description in ENERGY_SENSORS
     )
+    entities.extend(
+        VeBusLinkSensor(coordinator, description) for description in LINK_SENSORS
+    )
     phases = coordinator.identity.phases
     multi_phase = len(phases) > 1
     phase_descriptions = (
@@ -794,6 +826,10 @@ async def async_setup_entry(
         for address in units:
             for unit_description in UNIT_SENSORS:
                 entities.append(VeBusUnitSensor(coordinator, unit_description, address))
+            for energy_description in ENERGY_SENSORS:
+                entities.append(
+                    VeBusEnergySensor(coordinator, energy_description, unit=address)
+                )
     async_add_entities(entities)
 
 
@@ -910,9 +946,11 @@ class VeBusEnergySensor(VeBusEntity, RestoreSensor):
         self,
         coordinator: VeBusCoordinator,
         description: VeBusEnergySensorEntityDescription,
+        unit: int | None = None,
     ) -> None:
-        """Initialize the counter."""
-        super().__init__(coordinator, description)
+        """Initialize the counter of the system, or of the unit at ``unit``."""
+        super().__init__(coordinator, description, unit=unit)
+        self._unit = unit
         interval = float(
             coordinator.config_entry.options.get(
                 CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
@@ -941,9 +979,34 @@ class VeBusEnergySensor(VeBusEntity, RestoreSensor):
             self._counter.reset()
             return
         state = self.coordinator.data
-        self._counter.add(state.timestamp, self.entity_description.power_fn(state))
+        self._counter.add(state.timestamp, self._power(state))
+
+    def _power(self, state: VeBusState) -> float | None:
+        description = self.entity_description
+        if self._unit is None:
+            power = state.total_ram_value(description.var)
+        else:
+            unit = state.units.get(self._unit)
+            power = None if unit is None else unit.ram_value(description.var)
+        return None if power is None else description.sign * power
 
     @property
     def native_value(self) -> float:
         """Return the energy in kWh."""
         return round(self._counter.total, 4)
+
+
+class VeBusLinkSensor(VeBusEntity, SensorEntity):
+    """A sensor of the link between the MK3 and the device."""
+
+    entity_description: VeBusLinkSensorEntityDescription
+
+    @property
+    def available(self) -> bool:
+        """Stay available while the device is unreachable: that is the point."""
+        return True
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        return self.entity_description.value_fn(self.coordinator)
