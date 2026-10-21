@@ -74,6 +74,9 @@ class SimulatedMultiPlus:
     leds_blink: int = 0x00
     switch_register: int = 0x30 | 0x03 | 0x04
     current_limit: int = 160  # 0.1 A, the remote panel limit
+    # Panel state held by the interface ('D'): switch state and limit. An MK3
+    # reports 04 00 00 until a panel state is sent.
+    panel_state: tuple[int, int] = (4, 0)
     # The limit in effect is the lower of the remote panel limit and the
     # RAM value of setting 6, as on a MultiPlus-II.
     limit_follows_setting: bool = False
@@ -201,7 +204,8 @@ class SimulatedMultiPlus:
                 self.address = data[1]
             return [encode_frame(ord("A"), [data[0], self.address])]
         if cmd == "D":
-            return [encode_frame(ord("D"), [3, *_u16(self.current_limit), 0, 0])]
+            switch, limit = self.panel_state
+            return [encode_frame(ord("D"), [switch, *_u16(limit), 0, 0])]
         if cmd == "S":
             flags = data[4] if len(data) > 4 else 0
             if data and data[0] and not flags & 0x10:
@@ -232,6 +236,7 @@ class SimulatedMultiPlus:
         reg |= 0x01 * charge | 0x02 * invert | 0x10 * charge | 0x20 * invert
         self.switch_register = reg
         limit = data[1] | data[2] << 8
+        self.panel_state = (data[0], limit)
         if limit < 0x8000:
             self.current_limit = max(self.min_limit, min(limit, self.max_limit))
 
@@ -425,6 +430,8 @@ class FakeMK3:
     async def __call__(self, url: str) -> tuple[asyncio.StreamReader, FakeWriter]:
         if self.fail_open:
             raise FileNotFoundError(url)
+        # Opening the MK3 forgets the panel state it held.
+        self.device.panel_state = (4, 0)
         reader = asyncio.StreamReader()
         writer = FakeWriter(self.device, reader)
         self.writers.append(writer)

@@ -264,6 +264,8 @@ async def test_input_limit_read_from_the_multi(
     fake_mk3.device.limit_follows_setting = True
     configured = f"number.{PREFIX}_configured_ac_input_current_limit"
     remote = f"number.{PREFIX}_remote_ac_input_current_limit"
+    assert _state(hass, remote) == "unknown"
+    await _call(hass, "number", "set_value", {"entity_id": remote, "value": 16})
     await _call(hass, "number", "set_value", {"entity_id": configured, "value": 7})
     await coordinator.client.poll(full=True)
     await coordinator.async_refresh()

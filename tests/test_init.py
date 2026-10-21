@@ -118,7 +118,8 @@ async def test_controls(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     number = "number.victron_ve_bus_remote_ac_input_current_limit"
     # The mode is a guided device action, not a dashboard select.
     assert hass.states.get("select.victron_ve_bus_remote_mode") is None
-    assert hass.states.get(number).state == "16.0"
+    # Unknown until a panel state is sent: the device doesn't report it.
+    assert hass.states.get(number).state == "unknown"
 
     def sent() -> list[bytes]:
         return [f for f in fake_mk3.device.received if f[2] == ord("S") and f[0] == 7]

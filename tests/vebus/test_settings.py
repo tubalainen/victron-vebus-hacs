@@ -19,7 +19,8 @@ from custom_components.victron_vebus.vebus.frame import encode_frame
 from .simulator import FakeMK3, SimulatedMultiPlus
 
 MODE1 = encode_frame(ord("S"), [0, 0, 0, 1, 0x90, 0, 1])
-LONG = encode_frame(ord("S"), [3, 160, 0, 0x01, 0xD0, 0x3E, 0x06])
+# The panel state read with 'D' is sent back: 04 00 00 until one was set.
+LONG = encode_frame(ord("S"), [4, 0, 0, 0x01, 0xD0, 0x3E, 0x06])
 
 
 async def _client(

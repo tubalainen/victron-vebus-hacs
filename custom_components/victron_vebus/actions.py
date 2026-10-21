@@ -252,15 +252,24 @@ async def async_restart(coordinator: VeBusCoordinator) -> str:
     return "The restart command was sent. The Multi reconnects by itself."
 
 
+def panel_limit(coordinator: VeBusCoordinator) -> float | None:
+    """Return the limit to send with a new mode, keeping the one in place.
+
+    That is 0 A in passthru, else the remote panel limit if known, else the
+    limit in effect (which keeps it: the configured limit is at least that).
+    """
+    if coordinator.passthru:
+        return 0.0
+    config = coordinator.data.config
+    if config is None or config.dmc_dedicated:
+        return None
+    remote = coordinator.data.remote_current_limit
+    return remote if remote is not None else config.actual_current_limit
+
+
 async def async_set_mode(coordinator: VeBusCoordinator, mode: Mode) -> str:
     """Change the remote panel mode, keeping the current limit (or passthru)."""
-    config = coordinator.data.config
-    limit = None
-    if coordinator.passthru:
-        limit = 0.0
-    elif config is not None and not config.dmc_dedicated:
-        limit = config.actual_current_limit
-    await coordinator.client.set_remote_panel_state(mode, limit)
+    await coordinator.client.set_remote_panel_state(mode, panel_limit(coordinator))
     await coordinator.async_refresh_config()
     return f"The mode was set to {mode.value}."
 

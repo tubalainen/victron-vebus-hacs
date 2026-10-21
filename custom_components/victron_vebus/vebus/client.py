@@ -57,6 +57,7 @@ from .const import (
     Mode,
     RamVar,
     Setting,
+    SwitchState,
     WinmonCommand,
     WinmonReply,
 )
@@ -308,6 +309,9 @@ class VeBusClient:
         # current limit is the limit in effect while that is below the remote
         # panel limit.
         self.active_read: dict[int, int] = {}
+        # Lower bounds of RAM values: the configured input current limit is at
+        # least the limit in effect.
+        self.active_minimum: dict[int, int] = {}
         self.remote_state_supported = True
         self._remote_state_failures = 0
         # The last setting write: reply, read back and the frames of its
@@ -345,6 +349,7 @@ class VeBusClient:
         self.ram_values.clear()
         self.stored_raw.clear()
         self.active_read.clear()
+        self.active_minimum.clear()
         self._last_rx = time.monotonic()
         self._reader_task = asyncio.create_task(
             self._read_loop(), name=f"vebus reader {self.url}"
@@ -563,18 +568,18 @@ class VeBusClient:
         assert frame is not None
         return frame.data[0]
 
-    async def read_remote_limit(self) -> float | None:
-        """Read the input current limit set through the remote panel ('D').
+    async def read_panel_state(self) -> tuple[int, int]:
+        """Read the remote panel state the interface holds ('D').
 
-        The interface reports the last panel state it sends to the device.
-        None if the panel leaves the limit alone.
+        Returns the switch state and the raw current limit. This is the last
+        panel state sent to the interface, not a value read from the device:
+        until one is sent the MK3 reports 04 00 00 (see ``_panel_limit``).
         """
         frame = await self._command(
             CMD_INTERFACE_STATE, b"", _mk_reply(CMD_INTERFACE_STATE, 3)
         )
         assert frame is not None
-        limit = frame.data[1] | frame.data[2] << 8
-        return None if limit >= S_LIMIT_IGNORE else limit / 10
+        return frame.data[0], frame.data[1] | frame.data[2] << 8
 
     async def read_led(self) -> LedInfo:
         """Read the LED status ('L')."""
@@ -682,11 +687,14 @@ class VeBusClient:
         )
         raw = _setting_value(reply)
         active = self.active_read.get(setting)
+        minimum = self.active_minimum.get(setting)
         if (
             raw is not None
-            and active is not None
-            and active != raw
             and self.readsetting_reports is None
+            and (
+                (active is not None and active != raw)
+                or (minimum is not None and raw < minimum)
+            )
         ):
             # The device reports a RAM value that ReadSetting doesn't show.
             self.readsetting_reports = "eeprom"
@@ -694,7 +702,11 @@ class VeBusClient:
             self.stored_raw[setting] = raw
         if active is not None:
             return active
-        return self.ram_values.get(setting, raw)
+        if setting in self.ram_values:
+            return self.ram_values[setting]
+        if self._active_unknown(setting):
+            return None
+        return raw
 
     async def _read_setting_locked(self, setting: int) -> int | None:
         """Read the value in effect of a setting (lock held)."""
@@ -709,13 +721,32 @@ class VeBusClient:
         self.unsaved_settings.clear()
         self.ram_values.clear()
         self.active_read.clear()
+        self.active_minimum.clear()
+
+    def _active_unknown(self, setting: int) -> bool:
+        """Return True if the RAM value is known to differ from the stored one.
+
+        That is, the device reports a lower bound above the stored value but
+        neither the value itself nor a change it acknowledged.
+        """
+        minimum = self.active_minimum.get(setting)
+        stored = self.stored_raw.get(setting)
+        return (
+            self.readsetting_reports == "eeprom"
+            and minimum is not None
+            and stored is not None
+            and minimum > stored
+            and setting not in self.active_read
+            and setting not in self.ram_values
+        )
 
     def _read_input_limit(self, state: VeBusState) -> None:
         """Read the configured input current limit in effect (RAM).
 
         The limit in effect is the lower of the remote panel limit and the
         configured limit, unless the panel may overrule the configured limit.
-        Below the remote panel limit it is therefore the configured limit.
+        Below the remote panel limit it is therefore the configured limit;
+        otherwise the configured limit is at least the limit in effect.
         Verified on a MultiPlus-II (firmware 556): remote 9 A and a RAM-only
         configured limit of 7 A give 7 A in effect.
         """
@@ -726,18 +757,27 @@ class VeBusClient:
         if (
             info is None
             or config is None
-            or remote is None
             or config.dmc_dedicated
             or config.panel_can_override_limit
             or config.last_active_ac_input != 0
-            or not 0 < config.actual_current_limit < remote
+            or config.actual_current_limit <= 0
         ):
             self.active_read.pop(setting, None)
+            self.active_minimum.pop(setting, None)
             return
         raw = info.encode(config.actual_current_limit)
-        self.active_read[setting] = raw
+        if remote is not None and config.actual_current_limit < remote:
+            self.active_read[setting] = raw
+            self.active_minimum.pop(setting, None)
+            value: float | None = info.decode(raw)
+        else:
+            self.active_read.pop(setting, None)
+            self.active_minimum[setting] = raw
+            if not self._active_unknown(setting):
+                return
+            value = None
         if setting in SLOW_SETTINGS:
-            state.settings[setting] = info.decode(raw)
+            state.settings[setting] = value
 
     def active_value_source(self, setting: int) -> str:
         """Where the value in effect of a setting comes from.
@@ -745,13 +785,17 @@ class VeBusClient:
         "read": the device reports the RAM value (ReadSetting, or for the input
         current limit the limit in effect). "acknowledged": the device
         acknowledged a RAM-only change that ReadSetting does not show.
-        "stored": ReadSetting reports the stored value and RAM can't be read.
-        "unverified": no write has shown yet which of the two it reports.
+        "at_least": the RAM value differs from the stored one and is at least
+        ``active_minimum``, but its value is unknown. "stored": ReadSetting
+        reports the stored value and RAM can't be read. "unverified": nothing
+        has shown yet which of the two ReadSetting reports.
         """
         if setting in self.active_read:
             return "read"
         if setting in self.ram_values:
             return "acknowledged"
+        if self._active_unknown(setting):
+            return "at_least"
         if self.readsetting_reports == "ram":
             return "read"
         if self.readsetting_reports == "eeprom":
@@ -910,6 +954,7 @@ class VeBusClient:
         record["readback"] = readback
         # Read again from the device on the next poll.
         self.active_read.pop(setting, None)
+        self.active_minimum.pop(setting, None)
         if readback == raw:
             record["result"] = "ok"
             self.ram_values.pop(setting, None)
@@ -1599,7 +1644,7 @@ class VeBusClient:
         if not self.remote_state_supported:
             return
         try:
-            state.remote_current_limit = await self.read_remote_limit()
+            switch_state, limit = await self.read_panel_state()
         except VeBusTimeoutError:
             self._remote_state_failures += 1
             if self._remote_state_failures >= MAX_FAILED_POLLS:
@@ -1610,6 +1655,7 @@ class VeBusClient:
             return
         self._remote_state_failures = 0
         self._read_ok("remote_current_limit")
+        state.remote_current_limit = _panel_limit(state.config, switch_state, limit)
 
     async def run(
         self,
@@ -1707,6 +1753,33 @@ def _frequency(period: float | None) -> float | None:
     if not period or period <= 0:
         return None
     return round(10.0 / period, 2)
+
+
+SWITCH_STATE_TO_MODE = {state: mode for mode, state in MODE_TO_SWITCH_STATE.items()}
+
+
+def _panel_limit(
+    config: ConfigInfo | None, switch_state: int, limit: int
+) -> float | None:
+    """Return the remote panel limit from a 'D' reply, None if unknown.
+
+    'D' reports the panel state last sent to the interface. After the MK3 is
+    opened it reports 04 00 00 (off, 0 A) until one is sent, while the device
+    keeps running (seen on MK3 1170216). So the reply only counts if its
+    switch state is the remote mode the device reports, and "off, 0 A" never
+    counts.
+    """
+    if config is None or limit >= S_LIMIT_IGNORE:
+        return None
+    try:
+        mode = SWITCH_STATE_TO_MODE[SwitchState(switch_state)]
+    except ValueError:
+        return None
+    if mode != config.remote_mode:
+        return None
+    if mode == Mode.OFF and limit == 0:
+        return None
+    return limit / 10
 
 
 def _describe_write_reply(reply: bytes) -> str:

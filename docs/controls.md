@@ -181,18 +181,26 @@ therefore has two attributes:
 
 | Attribute | Meaning |
 |---|---|
-| **Active value source** | *Read from the Multi (RAM)*: the Multi reports the value in effect. *Change acknowledged by the Multi*: the Multi confirmed a RAM-only change (reply 0x88) that it doesn't show when read; the value it confirmed is shown. *Stored value (RAM can't be read)*: no change was made since Home Assistant started, so the stored value is shown. *Read from the Multi (RAM or stored not known yet)*: no change has shown yet which of the two the Multi reports. |
+| **Active value source** | *Read from the Multi (RAM)*: the Multi reports the value in effect. *Change acknowledged by the Multi*: the Multi confirmed a RAM-only change (reply 0x88) that it doesn't show when read; the value it confirmed is shown. *Unknown, at least the limit in effect*: the Multi shows that RAM differs from the stored value, but not by how much; the number is unknown. *Stored value (RAM can't be read)*: no change was made since Home Assistant started, so the stored value is shown. *Read from the Multi (RAM or stored not known yet)*: nothing has shown yet which of the two the Multi reports. |
 | **Stored value** | The EEPROM value, when the Multi is known to report it. |
+| **Active value at least** | Configured AC input current limit only, with the source *Unknown, at least the limit in effect*: the limit in effect, a lower bound of the RAM value. |
 
 The **configured AC input current limit** in effect is read from the Multi even when
 the setting itself reports the stored value. The limit in effect is the lower of the
 remote and the configured limit, so while it is below the remote limit it is the
 configured limit (verified on a MultiPlus-II: remote 9 A and configured 7 A in RAM give
-7 A). At or above the remote limit, the integration falls back to the other sources.
-It doesn't do this when *AC input overruled by remote* is enabled, or while the second
-input of a Quattro is active. The **Remote AC input current limit** number shows the
-limit the MK3 reports for the remote panel, not the limit in effect; that is the
-*AC input current limit* sensor.
+7 A). Otherwise the configured limit is at least the limit in effect: if that is above
+the stored value, the number is *unknown* and the attributes show the stored value and
+the lower bound. It doesn't do this when *AC input overruled by remote* is enabled, or
+while the second input of a Quattro is active.
+
+The **Remote AC input current limit** number shows the limit last sent through the
+remote panel, not the limit in effect (that is the *AC input current limit* sensor).
+The Multi doesn't report it; only the MK3 does, and the MK3 forgets it when it is
+opened. So after a restart of Home Assistant the number is **unknown** until a limit or
+mode is set again. Setting it once makes the configured limit readable again. A mode
+change keeps the remote limit if it is known, otherwise it sends the limit in effect,
+which leaves the limit unchanged.
 
 *Save settings permanently* writes only values the Multi acknowledged and that differ
 from the stored value, so the EEPROM isn't written for nothing. A permanent write
