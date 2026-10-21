@@ -264,3 +264,5 @@ async def test_diagnostics(
     assert diagnostics["phases"] == [1]
     assert diagnostics["state"]["dc"]["voltage"] == pytest.approx(26.41)
     assert diagnostics["statistics"]["frames_received"] > 0
+    # No setting has been written yet.
+    assert diagnostics["last_write"] is None

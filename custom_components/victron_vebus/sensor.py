@@ -55,8 +55,10 @@ PARALLEL_UPDATES = 0
 
 NOT_CHARGING = "not_charging"
 AC_INPUTS = ("ac_in_1", "ac_in_2", "ac_in_3", "ac_in_4")
-# Values of setting 10 (charge characteristic), as named by VEConfigure.
-CHARGE_CHARACTERISTICS = ("variable", "fixed", "fixed_storage")
+# Setting 10 (charge characteristic) is read as a bit field: bit 0 = fixed
+# absorption time, bit 1 = storage mode. 1 and 3 were seen on real devices
+# (xcellsior FINDINGS: fixed; a MultiPlus-II: "Fixed + storage").
+CHARGE_CHARACTERISTICS = ("variable", "fixed", "variable_storage", "fixed_storage")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -516,8 +518,10 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         key="maximum_absorption_time",
         translation_key="maximum_absorption_time",
         device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
+        # The device scales setting 9 to minutes (scale 60, e.g. 8 -> 480).
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        suggested_unit_of_measurement=UnitOfTime.HOURS,
+        suggested_display_precision=1,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_setting(Setting.ABSORPTION_DURATION),
         exists_fn=_has_setting(Setting.ABSORPTION_DURATION),

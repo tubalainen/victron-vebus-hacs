@@ -168,6 +168,21 @@ device restarts, which then goes back to the configuration made with VictronConn
 or VEConfigure. Because nothing is written to the EEPROM, automations can change these
 settings as often as needed without wearing it out.
 
+> [!WARNING]
+> **Known issue (1.1.x):** on at least one MultiPlus-II (firmware 556), every RAM-only
+> setting change fails with *"Setting N reads back … after writing …"*: the Multi
+> answers the read-back with the old value. Either it reports the stored (EEPROM) value
+> there, or it ignores RAM-only changes. This is being investigated: after a failed
+> change, the integration's **diagnostics download** contains a `last_write` section
+> with the Multi's exact reply. Please attach it to an issue.
+>
+> **Workaround:** store the setting permanently, either with the guided dialog
+> (*Configure → Device actions → Change a charger setting*, *Store permanently* on) or
+> with the `set_setting` action and `persistent: true`. This writes RAM and EEPROM like
+> VEConfigure does. Remember the EEPROM's limited write cycles: at most once per setting
+> every 5 minutes, and don't automate it. *Save settings permanently* doesn't help here,
+> because it only stores RAM changes that succeeded.
+
 How a change is made:
 
 - RAM-only writes need the MK3 in "long frame" mode. The integration switches the

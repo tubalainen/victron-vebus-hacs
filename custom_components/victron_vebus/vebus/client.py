@@ -7,10 +7,12 @@ from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 import contextlib
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 import functools
 import itertools
 import logging
 import time
+from typing import Any
 
 from . import transport
 from .const import (
@@ -97,6 +99,9 @@ MASTER_MULTI_LED_TIMEOUT = 1.0
 IDLE_TIMEOUT = 5.0
 # Number of attempts made for each request during initialisation.
 INIT_ATTEMPTS = 3
+# Frames kept from the long-frame session of the last setting write.
+MAX_CAPTURED_FRAMES = 60
+
 # Consecutive failed polls before the device is considered unreachable.
 MAX_FAILED_POLLS = 3
 # A value that could not be read keeps its last good reading through this
@@ -289,6 +294,10 @@ class VeBusClient:
         self._persistent_writes: dict[int, float] = {}
         # Settings changed in RAM only since the last restart or save.
         self.unsaved_settings: set[int] = set()
+        # The last setting write: reply, read back and the frames of its
+        # long-frame session, for diagnostics.
+        self.last_write: dict[str, Any] | None = None
+        self._capture: list[str] | None = None
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -360,6 +369,8 @@ class VeBusClient:
     def _dispatch(self, frame: Frame) -> None:
         self.stats.frames_received += 1
         self.stats.last_frames.append("<" + frame.to_bytes().hex(" "))
+        if self._capture is not None and len(self._capture) < MAX_CAPTURED_FRAMES:
+            self._capture.append("<" + frame.to_bytes().hex(" "))
         if frame.is_mk and frame.command == CMD_VERSION and len(frame.data) >= 4:
             self.mk3_version = int.from_bytes(frame.data[0:4], "little")
         elif frame.marker == MARKER_BOOT:
@@ -394,6 +405,8 @@ class VeBusClient:
             raise VeBusConnectionError("Not connected")
         self.stats.frames_sent += 1
         self.stats.last_frames.append(">" + frame.hex(" "))
+        if self._capture is not None and len(self._capture) < MAX_CAPTURED_FRAMES:
+            self._capture.append(">" + frame.hex(" "))
         try:
             self._writer.write(frame)
             await self._writer.drain()
@@ -654,6 +667,8 @@ class VeBusClient:
         so polling pauses meanwhile.
         """
         async with self._lock:
+            # Keep the frames of the session for diagnostics (see last_write).
+            self._capture = []
             await self._prepare()
             reply = await self._request(
                 encode_frame(CMD_INTERFACE_STATE), _mk_reply(CMD_INTERFACE_STATE, 3)
@@ -680,6 +695,7 @@ class VeBusClient:
                     _LOGGER.warning(
                         "Could not switch the interface back to short frames"
                     )
+                self._capture = None
 
     def _require_firmware(self, minimum: int, feature: str) -> None:
         version = self.firmware.version if self.firmware else None
@@ -739,26 +755,47 @@ class VeBusClient:
             raise ValueError("WriteViaID only addresses settings 0..255")
         if not 0 <= raw <= 0xFFFF:
             raise ValueError("Setting values are 16 bit")
+        flags = WRITE_VIA_ID_SETTING | (0 if persistent else WRITE_VIA_ID_RAM_ONLY)
+        where = "RAM and EEPROM" if persistent else "RAM only"
+        record: dict[str, Any] = {
+            "time": datetime.now(UTC).isoformat(timespec="seconds"),
+            "setting": setting,
+            "value": raw,
+            "flags": f"0x{flags:02x} ({where})",
+            "reply": None,
+            "readback": None,
+            "result": None,
+            "frames": self._capture if self._capture is not None else [],
+        }
+        self.last_write = record
         try:
             reply = await self._winmon_locked(
-                WinmonCommand.WRITE_VIA_ID,
-                WRITE_VIA_ID_SETTING | (0 if persistent else WRITE_VIA_ID_RAM_ONLY),
-                setting,
-                raw & 0xFF,
-                raw >> 8,
+                WinmonCommand.WRITE_VIA_ID, flags, setting, raw & 0xFF, raw >> 8
             )
         except VeBusTimeoutError:
             # Not every device acknowledges; the read back decides.
             reply = b""
+        except VeBusNotSupportedError:
+            record["reply"] = _describe_write_reply(
+                bytes([WinmonReply.UNKNOWN_COMMAND])
+            )
+            record["result"] = "not supported"
+            raise
+        record["reply"] = _describe_write_reply(reply)
         if reply and reply[0] == WinmonReply.ACCESS_LEVEL_REQUIRED:
+            record["result"] = "access level required"
             raise VeBusWriteError(f"Setting {setting} needs a higher access level")
         readback = _setting_value(
             await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
         )
+        record["readback"] = readback
         if readback != raw:
+            record["result"] = "read back differs"
             raise VeBusWriteError(
-                f"Setting {setting} reads back {readback} after writing {raw}"
+                f"Setting {setting} reads back {readback} after writing {raw} "
+                f"(WriteViaID reply: {record['reply']}; flags {record['flags']})"
             )
+        record["result"] = "ok"
         if persistent:
             self._persistent_writes[setting] = time.monotonic()
             self.unsaved_settings.discard(setting)
@@ -1492,3 +1529,17 @@ def _frequency(period: float | None) -> float | None:
     if not period or period <= 0:
         return None
     return round(10.0 / period, 2)
+
+
+def _describe_write_reply(reply: bytes) -> str:
+    """Describe the reply to WriteViaID (section 7.3.11)."""
+    if not reply:
+        return "no reply"
+    names: dict[int, str] = {
+        WinmonReply.UNKNOWN_COMMAND: "command not supported",
+        WinmonReply.WRITE_RAM_OK: "RAM variable written",
+        WinmonReply.WRITE_SETTING_OK: "setting written",
+        WinmonReply.ACCESS_LEVEL_REQUIRED: "access level required",
+    }
+    name = names.get(reply[0], "unexpected")
+    return f"0x{reply[0]:02x} {name}"

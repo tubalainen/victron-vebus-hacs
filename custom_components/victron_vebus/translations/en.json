@@ -388,9 +388,10 @@
       "charge_characteristic": {
         "name": "Charge characteristic",
         "state": {
-          "variable": "Variable (adaptive)",
+          "variable": "Adaptive",
           "fixed": "Fixed",
-          "fixed_storage": "Fixed with storage"
+          "variable_storage": "Adaptive + storage",
+          "fixed_storage": "Fixed + storage"
         }
       },
       "maximum_absorption_time": {
