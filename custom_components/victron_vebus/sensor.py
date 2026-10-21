@@ -670,6 +670,12 @@ PHASE_SENSORS: tuple[VeBusPhaseSensorEntityDescription, ...] = (
 )
 
 
+def _apparent_power(voltage: float | None, current: float | None) -> float | None:
+    if voltage is None or current is None:
+        return None
+    return abs(voltage * current)
+
+
 # Apparent power per phase, only for multi-phase systems.
 PHASE_POWER_SENSORS: tuple[VeBusPhaseSensorEntityDescription, ...] = (
     VeBusPhaseSensorEntityDescription(
@@ -678,7 +684,7 @@ PHASE_POWER_SENSORS: tuple[VeBusPhaseSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         suggested_display_precision=0,
-        phase_value_fn=lambda ac: abs(ac.mains_voltage * ac.mains_current),
+        phase_value_fn=lambda ac: _apparent_power(ac.mains_voltage, ac.mains_current),
     ),
     VeBusPhaseSensorEntityDescription(
         key="ac_output_apparent_power",
@@ -686,7 +692,9 @@ PHASE_POWER_SENSORS: tuple[VeBusPhaseSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfApparentPower.VOLT_AMPERE,
         suggested_display_precision=0,
-        phase_value_fn=lambda ac: abs(ac.inverter_voltage * ac.inverter_current),
+        phase_value_fn=lambda ac: _apparent_power(
+            ac.inverter_voltage, ac.inverter_current
+        ),
     ),
 )
 

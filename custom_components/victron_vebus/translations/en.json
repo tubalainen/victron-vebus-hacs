@@ -124,7 +124,7 @@
       },
       "action_passthru": {
         "title": "Stop grid charging",
-        "description": "Sets the remote AC input current limit to 0 A: the charger stops and the grid is passed straight through to the AC outputs (Victron calls this passthru). Normal operation (mode on) does not need it. To resume, the limit below is restored.",
+        "description": "Sets the remote AC input current limit to 0 A: the charger stops and the grid is passed straight through to the AC outputs (Victron calls this passthru). Normal operation (mode on) does not need it. To resume, the limit below is restored. It must be within the range the Multi reports.\n\n{error}",
         "data": {
           "passthru": "Action",
           "current_limit": "Current limit when resuming"

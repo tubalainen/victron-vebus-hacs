@@ -94,6 +94,13 @@ from .transport import CONNECTION_ERRORS, Opener
 _LOGGER = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 0.5
+# A tag whose request timed out isn't used again for this long, unless its
+# late reply arrives first (s).
+LATE_REPLY_WINDOW = 2.0
+# Permanent writes kept for diagnostics.
+MAX_EEPROM_LOG = 20
+# Settings that are bit fields (flags 0-15, 16-31, 32-47).
+FLAG_SETTINGS = frozenset({Setting.FLAGS_0, Setting.FLAGS_1, Setting.FLAGS_2})
 MASTER_MULTI_LED_TIMEOUT = 1.0
 # The interface sends a version frame about once per second when idle. Without
 # any frame for this long the VE.Bus device is asleep or the interface unplugged.
@@ -235,6 +242,7 @@ class ClientStatistics:
     # Requests that expect a reply; ``timeouts`` of them got none.
     requests: int = 0
     unsolicited_frames: int = 0
+    late_replies: int = 0
     timeouts: int = 0
     connects: int = 0
     connection_errors: int = 0
@@ -285,6 +293,10 @@ class VeBusClient:
         self._waiters: list[_Waiter] = []
         self._lock = asyncio.Lock()
         self._tags = itertools.cycle(CMD_WINMON_TAGGED)
+        # Tags whose request timed out, kept out of use until their late reply
+        # arrives or LATE_REPLY_WINDOW has passed, so that a late reply can't
+        # be taken for the answer to a newer request with the same tag.
+        self._late_tags: dict[int, float] = {}
         self._last_rx = 0.0
         self._readdress = False
         self._long_frames = False
@@ -334,6 +346,8 @@ class VeBusClient:
         # The last setting write: reply, read back and the frames of its
         # long-frame session, for diagnostics.
         self.last_write: dict[str, Any] | None = None
+        # The last permanent (EEPROM) writes, for diagnostics.
+        self.eeprom_writes: deque[dict[str, Any]] = deque(maxlen=MAX_EEPROM_LOG)
         self._capture: list[str] | None = None
 
     # ------------------------------------------------------------------
@@ -432,6 +446,12 @@ class VeBusClient:
             if matched:
                 waiter.future.set_result(frame)
                 return
+        if frame.is_mk and frame.command in self._late_tags:
+            # The late reply to a request that timed out: dropped, and its tag
+            # can be used again.
+            del self._late_tags[frame.command]
+            self.stats.late_replies += 1
+            return
         if not (frame.is_mk and frame.command == CMD_VERSION):
             self.stats.unsolicited_frames += 1
 
@@ -525,11 +545,34 @@ class VeBusClient:
             await self._prepare()
             return await self._winmon_locked(command, *args)
 
+    def _next_tag(self) -> int:
+        """Return the next Winmon tag that isn't waiting for a late reply."""
+        now = time.monotonic()
+        for _ in CMD_WINMON_TAGGED:
+            tag = next(self._tags)
+            until = self._late_tags.get(tag)
+            if until is None or now >= until:
+                self._late_tags.pop(tag, None)
+                return tag
+        # Every tag waits for a late reply: use the oldest one anyway.
+        tag = min(self._late_tags, key=self._late_tags.__getitem__)
+        del self._late_tags[tag]
+        return tag
+
+    async def _tagged_request(self, tag: int, frame: bytes) -> Frame:
+        """Send a tagged Winmon frame and wait for its reply (lock held)."""
+        try:
+            reply = await self._request(frame, _mk_reply(tag))
+        except VeBusTimeoutError:
+            self._late_tags[tag] = time.monotonic() + LATE_REPLY_WINDOW
+            raise
+        assert reply is not None
+        return reply
+
     async def _winmon_locked(self, command: WinmonCommand, *args: int) -> bytes:
         """Like _winmon, for callers that already hold the lock."""
-        tag = next(self._tags)
-        reply = await self._request(encode_frame(tag, [command, *args]), _mk_reply(tag))
-        assert reply is not None
+        tag = self._next_tag()
+        reply = await self._tagged_request(tag, encode_frame(tag, [command, *args]))
         data = reply.data
         if data and data[0] == WinmonReply.UNKNOWN_COMMAND:
             raise VeBusNotSupportedError(f"Command {command.name} not supported")
@@ -725,12 +768,26 @@ class VeBusClient:
         return self.ram_values.get(setting, raw)
 
     async def _read_setting_locked(self, setting: int) -> int | None:
-        """Read the value in effect of a setting (lock held)."""
+        """Read the value in effect of a setting to write it back (lock held).
+
+        The value is read twice and must be the same both times: it is the
+        base of a flag change or of a permanent write, and a reply corrupted
+        or meant for another request must not end up in the EEPROM.
+        """
         if setting in self.ram_values:
             return self.ram_values[setting]
-        return _setting_value(
+        first = _setting_value(
             await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
         )
+        second = _setting_value(
+            await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
+        )
+        if first != second:
+            raise VeBusWriteError(
+                f"Setting {setting} read as {first} and then {second}; nothing"
+                " was written"
+            )
+        return first
 
     def _forget_ram_changes(self) -> None:
         """RAM settings were reset to the stored configuration (restart)."""
@@ -832,24 +889,29 @@ class VeBusClient:
         ]
 
     async def complete_setting_info(
-        self, settings: Iterable[int], *, warn: bool = True
+        self,
+        settings: Iterable[int],
+        *,
+        warn: bool = True,
+        attempts: int = INIT_ATTEMPTS,
     ) -> list[int]:
         """Re-read setting info in long-frame mode where mode 1 gave no range.
 
         The Winmon mode 1 reply can be cut short before the minimum and
-        maximum, which writable settings need. Every setting is tried a few
-        times, and so is the long-frame session. Returns the settings whose
-        range is now known.
+        maximum, which writable settings need. Every setting is tried
+        `attempts` times, and so is the long-frame session. A retry in the
+        background uses one attempt, so it holds the bus only briefly.
+        Returns the settings whose range is now known.
         """
         missing = self.missing_ranges(settings)
         if not missing:
             return []
         completed: list[int] = []
-        for attempt in range(1, INIT_ATTEMPTS + 1):
+        for attempt in range(1, attempts + 1):
             try:
                 async with self._long_frame_session():
                     for setting in list(missing):
-                        if await self._read_range_locked(setting):
+                        if await self._read_range_locked(setting, attempts):
                             missing.remove(setting)
                             completed.append(setting)
             except VeBusTimeoutError as err:
@@ -865,14 +927,14 @@ class VeBusClient:
             )
         return completed
 
-    async def _read_range_locked(self, setting: int) -> bool:
+    async def _read_range_locked(self, setting: int, attempts: int) -> bool:
         """Read one setting's info in long-frame mode (lock held).
 
         Returns True once minimum and maximum are known. Only a "setting not
         supported" reply ends the attempts early; anything else (no reply, a
         reply cut short or one meant for another request) is tried again.
         """
-        for _ in range(INIT_ATTEMPTS):
+        for _ in range(attempts):
             try:
                 reply = await self._winmon_locked(
                     WinmonCommand.GET_SETTING_INFO, setting & 0xFF, setting >> 8
@@ -900,6 +962,30 @@ class VeBusClient:
                 return True
         return False
 
+    def _log_eeprom_write(self, record: dict[str, Any]) -> None:
+        self.eeprom_writes.append(
+            {key: record[key] for key in ("time", "setting", "value", "result")}
+        )
+
+    def _check_stored_range(self, setting: int, raw: int) -> None:
+        """Refuse a permanent write outside the range the device reports.
+
+        Flag settings are exempt: their maximum is the mask of the bits that
+        may be changed, and other bits are kept as they are.
+        """
+        if setting in FLAG_SETTINGS:
+            return
+        info = self.setting_info.get(setting)
+        if info is None or info.minimum is None or info.maximum is None:
+            raise VeBusWriteError(
+                f"The range of setting {setting} isn't known; nothing was stored"
+            )
+        if not info.minimum <= raw <= info.maximum:
+            raise VeBusWriteError(
+                f"Setting {setting} value {raw} is outside {info.minimum}"
+                f"..{info.maximum}; nothing was stored"
+            )
+
     def _check_persistent_rate(self, setting: int) -> None:
         last = self._persistent_writes.get(setting)
         if last is not None and time.monotonic() - last < MIN_PERSISTENT_WRITE_INTERVAL:
@@ -922,6 +1008,8 @@ class VeBusClient:
             raise ValueError("WriteViaID only addresses settings 0..255")
         if not 0 <= raw <= 0xFFFF:
             raise ValueError("Setting values are 16 bit")
+        if persistent:
+            self._check_stored_range(setting, raw)
         flags = WRITE_VIA_ID_SETTING | (0 if persistent else WRITE_VIA_ID_RAM_ONLY)
         where = "RAM and EEPROM" if persistent else "RAM only"
         record: dict[str, Any] = {
@@ -992,6 +1080,9 @@ class VeBusClient:
             self.stored_raw[setting] = readback
         else:
             record["result"] = "read back differs"
+            if persistent:
+                # It may have reached the EEPROM all the same.
+                self._log_eeprom_write(record)
             raise VeBusWriteError(
                 f"Setting {setting} reads back {readback} after writing {raw} "
                 f"(WriteViaID reply: {record['reply']}; flags {record['flags']})"
@@ -999,6 +1090,7 @@ class VeBusClient:
         if persistent:
             self._persistent_writes[setting] = time.monotonic()
             self.unsaved_settings.discard(setting)
+            self._log_eeprom_write(record)
         elif self.readsetting_reports == "eeprom" and setting not in self.ram_values:
             # RAM was set to the stored value: nothing to save.
             self.unsaved_settings.discard(setting)
@@ -1229,23 +1321,29 @@ class VeBusClient:
 
     async def _write_ram_raw_locked(self, ram_id: int, value: int) -> None:
         """Write a RAM variable: WriteRAMVar (no reply) then WriteData (lock held)."""
-        tag = next(self._tags)
+        tag = self._next_tag()
         await self._request(
             encode_frame(
                 tag, [WinmonCommand.WRITE_RAM_VAR, ram_id & 0xFF, ram_id >> 8]
             ),
             None,
         )
-        reply = await self._request(
+        reply = await self._tagged_request(
+            tag,
             encode_frame(
                 tag, [WinmonCommand.WRITE_DATA, value & 0xFF, (value >> 8) & 0xFF]
             ),
-            _mk_reply(tag),
         )
-        assert reply is not None
         if not reply.data or reply.data[0] != WinmonReply.WRITE_RAM_OK:
             raise VeBusWriteError(
                 f"RAM {ram_id} write not acknowledged ({reply.data.hex(' ')})"
+            )
+        # WriteRAMVar has no reply: if it was lost, the value went to the
+        # previous target. Read it back.
+        readback = await self._read_ram_raw_locked(ram_id)
+        if readback != value & 0xFFFF:
+            raise VeBusWriteError(
+                f"RAM {ram_id} reads back {readback} after writing {value & 0xFFFF}"
             )
 
     async def find_ess(self, addresses: Iterable[int]) -> dict[int, int]:
@@ -1312,7 +1410,10 @@ class VeBusClient:
         """Change the ESS disable charge / disable feed-in flags."""
         record = self._ess_record(address)
         async with self._at_address(address):
-            flags = await self._read_ram_raw_locked(record + ESS_FLAGS_OFFSET) or 0
+            flags = await self._read_ram_raw_locked(record + ESS_FLAGS_OFFSET)
+            if flags is None:
+                # Writing from 0 would clear the other flag.
+                raise VeBusWriteError("The ESS flags could not be read")
             if disable_charge is not None:
                 flags = (
                     (flags | ESS_DISABLE_CHARGE)
@@ -1402,20 +1503,25 @@ class VeBusClient:
                 raise DecodeError(f"RAM variable {var.name} not available")
             return value
 
-        battery_current = values.get(RamVar.I_BAT) or 0.0
+        # A value that was not read is unknown, not 0 (1.1.12).
+        battery_current = values.get(RamVar.I_BAT)
         dc = DcInfo(
             voltage=required(RamVar.U_BAT),
-            inverter_current=max(-battery_current, 0.0),
-            charger_current=max(battery_current, 0.0),
+            inverter_current=(
+                None if battery_current is None else max(-battery_current, 0.0)
+            ),
+            charger_current=(
+                None if battery_current is None else max(battery_current, 0.0)
+            ),
             inverter_frequency=_frequency(values.get(RamVar.INVERTER_PERIOD)),
         )
         ac = AcInfo(
             phase=1,
             phase_count=1,
-            mains_voltage=values.get(RamVar.U_MAINS_RMS) or 0.0,
-            mains_current=values.get(RamVar.I_MAINS_RMS) or 0.0,
+            mains_voltage=values.get(RamVar.U_MAINS_RMS),
+            mains_current=values.get(RamVar.I_MAINS_RMS),
             inverter_voltage=required(RamVar.U_INVERTER_RMS),
-            inverter_current=values.get(RamVar.I_INVERTER_RMS) or 0.0,
+            inverter_current=values.get(RamVar.I_INVERTER_RMS),
             mains_frequency=_frequency(values.get(RamVar.MAINS_PERIOD)),
             device_state=None,
             raw_device_state=0xFF,
@@ -1598,6 +1704,7 @@ class VeBusClient:
                 self._refill_slow_queue()
             items = [self._slow_queue.popleft()] if self._slow_queue else []
         for kind, ids in items:
+            key = f"{kind}_{'_'.join(str(i) for i in ids)}"
             try:
                 if kind == "ram":
                     state.ram.update(await self.read_ram_vars(ids))
@@ -1607,8 +1714,13 @@ class VeBusClient:
                     state.settings_raw[ids[0]] = await self.read_setting_raw(ids[0])
                 else:
                     state.settings[ids[0]] = await self.read_setting(ids[0])
+                self._read_ok(key)
             except (VeBusTimeoutError, VeBusNotSupportedError) as err:
                 _LOGGER.debug("Reading %s %s failed: %s", kind, ids, err)
+                if self._read_failed(key):
+                    # A slow value is read once per round; after a few failed
+                    # rounds it is shown as unknown rather than kept (1.1.12).
+                    self._expire_slow(state, kind, ids)
 
         if len(self.units) > 1:
             if full:
@@ -1646,6 +1758,19 @@ class VeBusClient:
     def checksum_errors(self) -> int:
         """Return the number of bytes skipped to resynchronise the stream."""
         return self._decoder.checksum_errors
+
+    @staticmethod
+    def _expire_slow(state: VeBusState, kind: str, ids: tuple[int, ...]) -> None:
+        """Forget a slow value whose last good read is too old."""
+        if kind == "ram":
+            for var in ids:
+                state.ram[var] = None
+        elif kind == "ess":
+            state.ess.pop(ids[0], None)
+        elif kind == "setting_raw":
+            state.settings_raw[ids[0]] = None
+        else:
+            state.settings[ids[0]] = None
 
     def _read_ok(self, key: str) -> None:
         self._read_failures.pop(key, None)

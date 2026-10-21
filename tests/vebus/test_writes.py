@@ -24,6 +24,7 @@ async def _client(fake: FakeMK3) -> VeBusClient:
 async def test_successful_write_is_recorded() -> None:
     """A RAM-only write records its reply, read back and frames."""
     fake = FakeMK3()
+    fake.device.ram_only_mode = "ok"
     client = await _client(fake)
     await client.write_setting(Setting.I_BAT_BULK, 39)
     record = client.last_write
@@ -101,6 +102,7 @@ async def test_acknowledged_ram_write_with_eeprom_read_back() -> None:
 async def test_read_back_showing_ram() -> None:
     """A device whose ReadSetting follows RAM-only writes reports RAM."""
     fake = FakeMK3()
+    fake.device.ram_only_mode = "ok"
     client = await _client(fake)
     await client.write_setting(Setting.I_BAT_BULK, 39)
     assert client.readsetting_reports == "ram"
@@ -224,6 +226,7 @@ async def test_no_reply_is_recorded() -> None:
     """A write without an acknowledgement is recorded as such."""
     fake = FakeMK3()
     fake.device.ack_writes = False
+    fake.device.ram_only_mode = "ok"
     client = await _client(fake)
     await client.write_setting(Setting.I_BAT_BULK, 39)
     assert client.last_write is not None

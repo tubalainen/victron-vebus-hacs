@@ -313,7 +313,7 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         if not self.client.missing_ranges(WRITABLE_SETTINGS):
             return
         completed = await self.client.complete_setting_info(
-            WRITABLE_SETTINGS, warn=False
+            WRITABLE_SETTINGS, warn=False, attempts=1
         )
         if completed:
             _LOGGER.info("Read the range of settings %s", completed)

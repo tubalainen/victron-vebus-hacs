@@ -123,13 +123,16 @@ class DcInfo:
     """DC info frame (section 6.1)."""
 
     voltage: float
-    inverter_current: float
-    charger_current: float
+    # None only when built from RAM and the battery current was not read.
+    inverter_current: float | None
+    charger_current: float | None
     inverter_frequency: float | None
 
     @property
-    def battery_current(self) -> float:
+    def battery_current(self) -> float | None:
         """Net battery current, positive when charging."""
+        if self.charger_current is None or self.inverter_current is None:
+            return None
         return self.charger_current - self.inverter_current
 
 
@@ -139,10 +142,12 @@ class AcInfo:
 
     phase: int
     phase_count: int | None
-    mains_voltage: float
-    mains_current: float
+    # The None values only occur when built from RAM variables that were not
+    # read (devices without info frames); never shown as 0 (1.1.12).
+    mains_voltage: float | None
+    mains_current: float | None
     inverter_voltage: float
-    inverter_current: float
+    inverter_current: float | None
     mains_frequency: float | None
     device_state: DeviceState | None
     raw_device_state: int

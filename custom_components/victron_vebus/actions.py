@@ -273,6 +273,35 @@ def panel_limit(coordinator: VeBusCoordinator) -> float | None:
     return remote if remote is not None else config.actual_current_limit
 
 
+def check_panel_limit(
+    coordinator: VeBusCoordinator, value: float, *, allow_zero: bool
+) -> str | None:
+    """Return an error if a remote panel limit is outside the device's range.
+
+    The range is the one the Multi reports (MasterMultiLED). 0 A, which stops
+    grid charging, is only allowed where the caller already asked for it.
+    """
+    if allow_zero and value == 0:
+        return None
+    config = coordinator.data.config
+    if config is None:
+        return "the current limit range of the device is unknown"
+    low, high = config.minimum_current_limit, config.maximum_current_limit
+    if not low <= value <= high:
+        return f"{value:g} A is outside {low:g}..{high:g} A"
+    return None
+
+
+def raise_invalid(error: str | None) -> None:
+    """Raise a validation error for the message, if there is one."""
+    if error is not None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="invalid_value",
+            translation_placeholders={"error": error},
+        )
+
+
 async def async_set_mode(coordinator: VeBusCoordinator, mode: Mode) -> str:
     """Change the remote panel mode, keeping the current limit (or passthru)."""
     await coordinator.client.set_remote_panel_state(mode, panel_limit(coordinator))
@@ -319,13 +348,16 @@ async def async_set_passthru(
 ) -> str:
     """Stop grid charging (passthru, limit 0) or resume it (restore a limit)."""
     mode = panel_mode(coordinator)
-    if not enter and limit is None:
-        limit = resume_limit(coordinator)
+    current = 0.0
+    if not enter:
+        if limit is None:
+            limit = resume_limit(coordinator)
         if limit is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="limit_unknown"
             )
-    current = 0.0 if enter else limit
+        raise_invalid(check_panel_limit(coordinator, limit, allow_zero=False))
+        current = limit
     await coordinator.client.set_remote_panel_state(mode, current)
     coordinator.passthru = enter
     await coordinator.async_refresh_config()
@@ -402,20 +434,19 @@ def check_setting(
     state = coordinator.data
     absorption = state.setting_value(Setting.U_BAT_ABSORPTION)
     float_voltage = state.setting_value(Setting.U_BAT_FLOAT)
-    if setting == Setting.U_BAT_FLOAT and absorption is not None and value > absorption:
-        return f"float voltage above the absorption voltage ({absorption:g} V)"
-    if (
-        setting == Setting.U_BAT_ABSORPTION
-        and float_voltage is not None
-        and value < float_voltage
-    ):
-        return f"absorption voltage below the float voltage ({float_voltage:g} V)"
-    if (
-        setting == Setting.SOLAR_WIND_PRIORITY_VOLTAGE
-        and absorption is not None
-        and value > absorption
-    ):
-        return f"above the absorption voltage ({absorption:g} V)"
+    # The charge voltages are checked against each other. When the other one
+    # is unknown the change is refused rather than written unchecked (1.1.12).
+    if setting in (Setting.U_BAT_FLOAT, Setting.SOLAR_WIND_PRIORITY_VOLTAGE):
+        if absorption is None:
+            return "the absorption voltage is unknown, so the value cannot be checked"
+        if value > absorption:
+            what = "float voltage" if setting == Setting.U_BAT_FLOAT else "value"
+            return f"{what} above the absorption voltage ({absorption:g} V)"
+    if setting == Setting.U_BAT_ABSORPTION:
+        if float_voltage is None:
+            return "the float voltage is unknown, so the value cannot be checked"
+        if value < float_voltage:
+            return f"absorption voltage below the float voltage ({float_voltage:g} V)"
     return None
 
 

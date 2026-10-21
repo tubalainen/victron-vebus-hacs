@@ -136,8 +136,9 @@ class SimulatedMultiPlus:
     ack_writes: bool = True
     # How RAM-only WriteViaID behaves: "ok" (RAM changes and reads back),
     # "ignored" (acknowledged but nothing changes) or "readback_eeprom" (RAM
-    # changes, but ReadSetting returns the stored EEPROM value).
-    ram_only_mode: str = "ok"
+    # changes, but ReadSetting returns the stored EEPROM value). The default
+    # is "readback_eeprom", as on a MultiPlus-II with firmware 556 (1.1.12).
+    ram_only_mode: str = "readback_eeprom"
     access_level_settings: set[int] = field(default_factory=set)
     # (flags, setting, value) of every WriteViaID.
     writes: list[tuple[int, int, int]] = field(default_factory=list)
@@ -157,19 +158,23 @@ class SimulatedMultiPlus:
     # (address, RAM ID, signed value) of every WriteRAMVar/WriteData pair.
     ram_writes: list[tuple[int, int, int]] = field(default_factory=list)
     _pending_ram_write: int | None = None
+    # Number of WriteRAMVar requests to lose (they have no reply).
+    lost_write_ram_var: int = 0
     # Data of every Battery Operational Limits frame ('F' 9).
     bol_frames: list[bytes] = field(default_factory=list)
 
     # Number of 'F' 8 resets received.
     resets: int = 0
-    # Settings as stored in the EEPROM; a reset restores them.
+    # Settings as stored in the EEPROM; a reset restores them. Filled from
+    # `settings` on the first request, so a test can change a setting before
+    # (entries set here by the test win).
     eeprom: dict[int, int] = field(default_factory=dict)
+    _eeprom_loaded: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
         """Add the Quattro AC input 2 limit and the ESS assistant."""
         if self.quattro:
             self.settings[49] = 120
-        self.eeprom = dict(self.settings)
 
     def enable_ess(self, addresses: tuple[int, ...] = (0,)) -> None:
         """Install the ESS assistant on the given addresses."""
@@ -189,9 +194,31 @@ class SimulatedMultiPlus:
     # Requests to leave unanswered, by command letter ('F' 5 as "F5"), with
     # the number of replies still to drop.
     drop_replies: dict[str, int] = field(default_factory=dict)
+    # Number of Winmon ('X', 'Y', 'Z') replies sent late: each one is held
+    # back and sent just before the replies to the next request.
+    late_winmon: int = 0
+    _held: list[bytes] = field(default_factory=list, repr=False)
+    # Values ReadSetting returns first, per setting, before the real value
+    # (e.g. a corrupted read).
+    read_sequence: dict[int, list[int]] = field(default_factory=dict)
+    # Settings whose ReadSetting gets no reply.
+    unanswered_settings: set[int] = field(default_factory=set)
 
     def handle(self, frame: Frame) -> list[bytes]:
+        """Return the reply frames for a request, with any late reply first."""
+        replies = self._handle(frame)
+        held, self._held = self._held, []
+        if replies and self.late_winmon and chr(frame.command or 0) in "XYZ":
+            self.late_winmon -= 1
+            self._held = replies
+            return held
+        return held + replies
+
+    def _handle(self, frame: Frame) -> list[bytes]:
         """Return the reply frames for a request."""
+        if not self._eeprom_loaded:
+            self.eeprom = {**self.settings, **self.eeprom}
+            self._eeprom_loaded = True
         self.received.append(frame.to_bytes())
         if self.asleep or not frame.is_mk:
             return []
@@ -310,11 +337,15 @@ class SimulatedMultiPlus:
                 self.charge_sub_state = {1: 7, 2: 6, 3: 3}[args[0]]
             return [0x94, self.device_state, self.charge_sub_state]
         if cmd == 0x32:
+            if self.lost_write_ram_var:
+                self.lost_write_ram_var -= 1
+                return []
             self._pending_ram_write = args[0] | args[1] << 8
             return []  # no reply
         if cmd == 0x34:
+            # The target stays selected: WriteData after a lost WriteRAMVar
+            # writes to the previous target.
             ram_id = self._pending_ram_write
-            self._pending_ram_write = None
             if ram_id is None:
                 return [0x80, 0, 0]
             value = args[0] | args[1] << 8
@@ -347,6 +378,8 @@ class SimulatedMultiPlus:
             values: list[int] = []
             for var in args:
                 if var >= 128:
+                    if self.ess and var not in assistant:
+                        return [0x90, 0, 0]
                     values += _u16(assistant.get(var, 0))
                     continue
                 if var not in ram:
@@ -390,6 +423,10 @@ class SimulatedMultiPlus:
             setting = args[0] | args[1] << 8
             if setting not in self.settings:
                 return [0x91, 0, 0]
+            if setting in self.unanswered_settings:
+                return []
+            if self.read_sequence.get(setting):
+                return [0x86, *_u16(self.read_sequence[setting].pop(0))]
             if self.ram_only_mode == "readback_eeprom" and setting in self.eeprom:
                 return [0x86, *_u16(self.eeprom[setting])]
             return [0x86, *_u16(self.settings[setting])]
