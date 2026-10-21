@@ -20,7 +20,7 @@ from .simulator import FakeMK3, SimulatedMultiPlus
 
 MODE1 = encode_frame(ord("S"), [0, 0, 0, 1, 0x90, 0, 1])
 # The panel state read with 'D' is sent back: 04 00 00 until one was set.
-LONG = encode_frame(ord("S"), [4, 0, 0, 0x01, 0xD0, 0x3E, 0x06])
+LONG = encode_frame(ord("S"), [0, 0, 0, 0x01, 0xD0, 0x3E, 0x06])
 
 
 async def _client(

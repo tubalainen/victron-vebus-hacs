@@ -11,13 +11,14 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+
+from .const import DOMAIN
 from .coordinator import VeBusCoordinator
 from .vebus import ForceChargeState, Mode, Setting, SettingFlag
 from .vebus.const import MIN_PERSISTENT_WRITE_INTERVAL
 
 OUTPUTS = "AC out 1 and AC out 2"
-# Current limit to leave passthru with when no other limit is known (A).
-DEFAULT_CURRENT_LIMIT = 16.0
 
 RESTART_WARNING = f"""**The Multi restarts.**
 
@@ -206,6 +207,11 @@ RESTART_RISK = (
     "device is power cycled"
 )
 SAVE_RISK = "the changed settings replace the stored configuration (EEPROM)"
+BATTERY_LIMIT_RISK = (
+    "the Multi follows these limits instead of its charger settings; a discharge "
+    "current of 0 A, or limits that stop being sent, stop charging and inverting "
+    "until the Multi is restarted"
+)
 
 
 @dataclass(frozen=True)
@@ -274,12 +280,51 @@ async def async_set_mode(coordinator: VeBusCoordinator, mode: Mode) -> str:
     return f"The mode was set to {mode.value}."
 
 
+def panel_mode(coordinator: VeBusCoordinator) -> Mode:
+    """Return the mode this remote panel requests, to keep it unchanged.
+
+    That is the remote mode, not the mode in effect: with the front switch
+    on "charger only" the mode in effect would lock the remote to it too.
+    """
+    config = coordinator.data.config
+    mode = config.remote_mode if config is not None else None
+    if mode is None:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN, translation_key="remote_mode_unknown"
+        )
+    return mode
+
+
+def resume_limit(coordinator: VeBusCoordinator) -> float | None:
+    """Return the limit to leave passthru with, None if none is known.
+
+    The last remote panel limit above 0 A, else the last limit in effect
+    above 0 A, else the configured limit of the active AC input. There is no
+    fixed default: it could be above the breaker of the input.
+    """
+    for limit in (coordinator.last_remote_limit, coordinator.last_current_limit):
+        if limit:
+            return limit
+    config = coordinator.data.config
+    setting = (
+        Setting.I_MAINS_LIMIT_AC2
+        if config is not None and config.last_active_ac_input == 1
+        else Setting.I_MAINS_LIMIT_AC1
+    )
+    return coordinator.data.setting_value(setting) or None
+
+
 async def async_set_passthru(
     coordinator: VeBusCoordinator, enter: bool, limit: float | None
 ) -> str:
     """Stop grid charging (passthru, limit 0) or resume it (restore a limit)."""
-    config = coordinator.data.config
-    mode = config.mode if config is not None and config.mode else Mode.ON
+    mode = panel_mode(coordinator)
+    if not enter and limit is None:
+        limit = resume_limit(coordinator)
+        if limit is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="limit_unknown"
+            )
     current = 0.0 if enter else limit
     await coordinator.client.set_remote_panel_state(mode, current)
     coordinator.passthru = enter
@@ -371,4 +416,21 @@ def check_setting(
         and value > absorption
     ):
         return f"above the absorption voltage ({absorption:g} V)"
+    return None
+
+
+def check_battery_limit_voltage(
+    coordinator: VeBusCoordinator, value: float
+) -> str | None:
+    """Return why a battery limit voltage is refused, None if it is fine.
+
+    It must lie within the range the device reports for the absorption
+    voltage, so a typo can't ask for a voltage the battery isn't built for.
+    """
+    info = coordinator.client.setting_info.get(Setting.U_BAT_ABSORPTION)
+    if info is None or info.minimum is None or info.maximum is None:
+        return "the range of the absorption voltage isn't known yet"
+    low, high = info.decode(info.minimum), info.decode(info.maximum)
+    if not low <= value <= high:
+        return f"{value:g} V is outside the absorption voltage range {low:g}-{high:g} V"
     return None

@@ -49,6 +49,7 @@ from .const import (
     CONF_ALARM_ISSUES,
     CONF_ENABLE_BATTERY_LIMITS,
     CONF_ENABLE_CONTROLS,
+    CONF_ENABLE_ESS_CONTROL,
     CONF_SCAN_INTERVAL,
     CONF_USAGE,
     DEFAULT_ADDRESS,
@@ -273,12 +274,22 @@ class VeBusConfigFlow(ConfigFlow, domain=DOMAIN):
             options={CONF_ENABLE_CONTROLS: controls},
         )
 
+    async def async_step_disable_battery_limits(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Warn that monitoring only stops the battery limits (reconfigure)."""
+        if user_input is not None:
+            return self._async_finish_reconfigure(controls=False)
+        return self.async_show_form(step_id="disable_battery_limits")
+
     def _async_finish_reconfigure(self, *, controls: bool) -> ConfigFlowResult:
         entry = self._get_reconfigure_entry()
         options = {**entry.options, CONF_ENABLE_CONTROLS: controls}
         if not controls:
-            # Battery limits need control; they are switched off with it.
+            # Battery limits and ESS control need control; they are switched
+            # off with it.
             options[CONF_ENABLE_BATTERY_LIMITS] = False
+            options[CONF_ENABLE_ESS_CONTROL] = False
         return self.async_update_reload_and_abort(
             entry, options=options, **self._reconfigure_data
         )
@@ -313,6 +324,11 @@ class VeBusConfigFlow(ConfigFlow, domain=DOMAIN):
                 controls = user_input[CONF_USAGE] == USAGE_CONTROL
                 if controls and not entry.options.get(CONF_ENABLE_CONTROLS, False):
                     return await self.async_step_control_warning()
+                if not controls and entry.options.get(
+                    CONF_ENABLE_BATTERY_LIMITS, False
+                ):
+                    # Monitoring only switches battery limits off: warn first.
+                    return await self.async_step_disable_battery_limits()
                 return self._async_finish_reconfigure(controls=controls)
         usage = (
             USAGE_CONTROL
@@ -359,14 +375,15 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
     ) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
-            was_enabled = self.config_entry.options.get(
-                CONF_ENABLE_BATTERY_LIMITS, False
-            )
-            options = {**self.config_entry.options, **user_input}
-            if was_enabled and not options.get(CONF_ENABLE_BATTERY_LIMITS, False):
-                self._pending = options
-                return await self.async_step_disable_battery_limits()
-            return self.async_create_entry(data=options)
+            old = self.config_entry.options
+            options = {**old, **user_input}
+            self._pending = options
+            if any(
+                options.get(key, False) and not old.get(key, False)
+                for key in (CONF_ENABLE_BATTERY_LIMITS, CONF_ENABLE_ESS_CONTROL)
+            ):
+                return await self.async_step_enable_experimental()
+            return await self._async_finish_settings()
         fields: dict[Any, Any] = {
             vol.Required(
                 CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
@@ -385,6 +402,9 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
             fields[vol.Required(CONF_ENABLE_BATTERY_LIMITS, default=False)] = (
                 BooleanSelector()
             )
+            fields[vol.Required(CONF_ENABLE_ESS_CONTROL, default=False)] = (
+                BooleanSelector()
+            )
         schema = vol.Schema(fields)
         return self.async_show_form(
             step_id="settings",
@@ -392,6 +412,29 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                 schema, self.config_entry.options
             ),
         )
+
+    async def async_step_enable_experimental(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Warn that battery limits and ESS control are not verified on hardware."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if user_input.get(CONF_ACKNOWLEDGE):
+                return await self._async_finish_settings()
+            errors["base"] = "acknowledge_required"
+        return self.async_show_form(
+            step_id="enable_experimental",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_ACKNOWLEDGE, default=False): BooleanSelector()}
+            ),
+            errors=errors,
+        )
+
+    async def _async_finish_settings(self) -> ConfigFlowResult:
+        was_enabled = self.config_entry.options.get(CONF_ENABLE_BATTERY_LIMITS, False)
+        if was_enabled and not self._pending.get(CONF_ENABLE_BATTERY_LIMITS, False):
+            return await self.async_step_disable_battery_limits()
+        return self.async_create_entry(data=self._pending)
 
     async def async_step_disable_battery_limits(
         self, user_input: dict[str, Any] | None = None
@@ -508,7 +551,13 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                     lambda: actions.async_set_passthru(coordinator, False, limit),
                 )
             )
-        default_limit = coordinator.data.setting_value(Setting.I_MAINS_LIMIT_AC1)
+        # No fixed default: a guess could be above the breaker of the input.
+        default_limit = actions.resume_limit(coordinator)
+        limit_key = (
+            vol.Required("current_limit", default=default_limit)
+            if default_limit is not None
+            else vol.Required("current_limit")
+        )
         schema = vol.Schema(
             {
                 vol.Required("passthru", default="enter"): SelectSelector(
@@ -516,9 +565,7 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                         options=["enter", "leave"], translation_key="passthru"
                     )
                 ),
-                vol.Required(
-                    "current_limit", default=default_limit or 16.0
-                ): NumberSelector(
+                limit_key: NumberSelector(
                     NumberSelectorConfig(
                         min=0,
                         max=200,

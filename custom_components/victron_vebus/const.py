@@ -17,6 +17,7 @@ CONF_ACKNOWLEDGE: Final = "acknowledge"
 # Battery Operational Limits: once sent, the Multi stops charging and inverting
 # if they are not refreshed within 5 minutes, until it is restarted.
 CONF_ENABLE_BATTERY_LIMITS: Final = "enable_battery_limits"
+CONF_ENABLE_ESS_CONTROL: Final = "enable_ess_control"
 CONF_SCAN_INTERVAL: Final = "scan_interval"
 # Show active alarms (overload, low battery, temperature) as repair issues.
 CONF_ALARM_ISSUES: Final = "alarm_issues"
@@ -75,3 +76,6 @@ SIGNAL_RANGES: Final = "victron_vebus_ranges_{}"
 # RANGES_RETRY_INTERVAL.
 RANGES_FIRST_RETRY: Final = 60
 RANGES_RETRY_INTERVAL: Final = 300
+# Battery limits not sent for this long raise a repair issue (the Multi
+# stops charging and inverting after 5 minutes without them).
+BATTERY_LIMITS_STALE: Final = 120

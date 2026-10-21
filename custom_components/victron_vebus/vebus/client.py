@@ -365,6 +365,9 @@ class VeBusClient:
         self.readsetting_reports = None
         self.ram_values.clear()
         self.stored_raw.clear()
+        # The device may have restarted while disconnected, and the values to
+        # save were RAM values only the device knew: nothing can be saved.
+        self.unsaved_settings.clear()
         self._last_rx = time.monotonic()
         self._reader_task = asyncio.create_task(
             self._read_loop(), name=f"vebus reader {self.url}"
@@ -508,11 +511,13 @@ class VeBusClient:
     async def _ensure_address(self) -> None:
         if not self._readdress:
             return
-        self._readdress = False
         await self._request(
             encode_frame(CMD_ADDRESS, [A_ACTION_SET, self.address]),
             _mk_reply(CMD_ADDRESS),
         )
+        # Only once the interface has confirmed it: until then every request
+        # tries again, so nothing goes to another unit by mistake.
+        self._readdress = False
 
     async def _winmon(self, command: WinmonCommand, *args: int) -> bytes:
         """Send a tagged Winmon command and return the reply after the tag."""
@@ -579,6 +584,10 @@ class VeBusClient:
             [switch_state, limit & 0xFF, limit >> 8, 0x01, S_FLAG_ABSOLUTE_LIMIT],
             _mk_reply(CMD_STATE),
         )
+        # A poll that read the panel state before this must not report it:
+        # unknown until it is read again.
+        self.state = replace(self.state, remote_current_limit=None)
+        self._config_since_poll = True
 
     async def set_interface_flags(self, flags: InterfaceFlag) -> int:
         """Set the MK3 interface flags ('H'), e.g. to keep the device awake."""
@@ -779,8 +788,11 @@ class VeBusClient:
             assert reply is not None
             self._held_panel = bytes(reply.data[0:3])
             self._long_frames = True
+            # The held state is sent back (flag 0x10: not to the device), but
+            # never "off": the same rule as returning to mode 1.
+            panel = _mode1_data(self._held_panel)[0:3]
             await self._request(
-                encode_frame(CMD_STATE, [*reply.data[0:3], *S_LONG_FRAMES_TAIL]),
+                encode_frame(CMD_STATE, [*panel, *S_LONG_FRAMES_TAIL]),
                 _mk_reply(CMD_STATE),
             )
             try:

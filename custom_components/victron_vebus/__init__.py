@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from homeassistant.const import CONF_DEVICE, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import CONF_DEVICE, EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import (
     config_validation as cv,
@@ -108,6 +108,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: VeBusConfigEntry) -> boo
         client=client, coordinator=coordinator, platforms=platforms
     )
     entry.async_on_unload(client.close)
+
+    async def _async_stop(_event: Event) -> None:
+        # Stopping Home Assistant doesn't unload the entry: hand the ESS
+        # setpoint back to the device here too.
+        await coordinator.async_release()
+
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop)
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, platforms)
     coordinator.async_start()

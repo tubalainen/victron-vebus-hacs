@@ -272,6 +272,10 @@ async def test_reconfigure_to_control_and_back(
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_DEVICE: DEVICE_PATH, CONF_USAGE: USAGE_MONITOR}
         )
+        # Monitoring only stops the battery limits: confirmed first (1.1.11).
+        assert result["step_id"] == "disable_battery_limits"
+        assert config_entry.options[CONF_ENABLE_BATTERY_LIMITS] is True
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
         assert result["reason"] == "reconfigure_successful"
     assert config_entry.options[CONF_ENABLE_CONTROLS] is False
     assert config_entry.options[CONF_ENABLE_BATTERY_LIMITS] is False
