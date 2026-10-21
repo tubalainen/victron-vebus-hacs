@@ -24,3 +24,7 @@ the power to the MK3, so nothing can switch the device back on remotely. With **
 awake** on (the default), the integration sets the MK3's *standby* flag, which keeps
 the device awake. It resends the flag on every poll because the flag is lost whenever
 the device loses power. A switched-off device that is kept awake uses a few watts more.
+
+This matters most when you switch the Multi off from Home Assistant with *Mode Off*:
+without *Keep awake* it can only be switched on again at the device. See
+[Mode Off](controls.md#mode-off).
