@@ -39,6 +39,16 @@
       "battery_ripple": {
         "default": "mdi:sine-wave"
       },
+      "ripple_alarm": {
+        "default": "mdi:sine-wave",
+        "state": {
+          "ok": "mdi:check-circle-outline",
+          "alarm": "mdi:alert"
+        }
+      },
+      "vebus_error_code": {
+        "default": "mdi:alert-circle-outline"
+      },
       "battery_capacity": {
         "default": "mdi:battery-high"
       },

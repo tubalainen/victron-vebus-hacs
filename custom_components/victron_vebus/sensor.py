@@ -24,6 +24,7 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfFrequency,
     UnitOfPower,
+    UnitOfTemperature,
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -128,6 +129,23 @@ def _led(led: Led) -> Callable[[VeBusState], StateType]:
         return state.leds.state(led).value
 
     return value
+
+
+def _has_full_led_reply(coordinator: VeBusCoordinator) -> bool:
+    """Return True if the 'L' reply has the alarm byte and the VE.Bus error code."""
+    leds = coordinator.data.leds if coordinator.data else None
+    return leds is not None and leds.alarm_flags is not None
+
+
+def _vebus_error(state: VeBusState) -> StateType:
+    if state.leds is None:
+        return None
+    return state.leds.vebus_error
+
+
+def _ripple_alarm(state: VeBusState) -> StateType:
+    condition = state.leds.condition(3) if state.leds else None
+    return None if condition is None else condition.value
 
 
 def _alarm(led: Led) -> Callable[[VeBusState], StateType]:
@@ -291,6 +309,16 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         exists_fn=_has_ram(RamVar.U_BAT_RMS),
     ),
     VeBusSensorEntityDescription(
+        key="battery_temperature",
+        translation_key="battery_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        suggested_display_precision=1,
+        value_fn=_ram(RamVar.BATTERY_TEMPERATURE),
+        exists_fn=_has_ram(RamVar.BATTERY_TEMPERATURE),
+    ),
+    VeBusSensorEntityDescription(
         key="state_of_charge",
         translation_key="state_of_charge",
         device_class=SensorDeviceClass.BATTERY,
@@ -349,6 +377,21 @@ DEVICE_SENSORS: tuple[VeBusSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=[alarm.value for alarm in AlarmState],
         value_fn=_alarm(Led.TEMPERATURE),
+    ),
+    VeBusSensorEntityDescription(
+        key="ripple_alarm",
+        translation_key="ripple_alarm",
+        device_class=SensorDeviceClass.ENUM,
+        options=[alarm.value for alarm in AlarmState],
+        value_fn=_ripple_alarm,
+        exists_fn=_has_full_led_reply,
+    ),
+    VeBusSensorEntityDescription(
+        key="vebus_error_code",
+        translation_key="vebus_error_code",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_vebus_error,
+        exists_fn=_has_full_led_reply,
     ),
     *(
         VeBusSensorEntityDescription(

@@ -163,6 +163,34 @@ class LedInfo:
 
     on: Led
     blink: Led
+    # The rest of a full 'L' reply (VictronConnect, FINDINGS §12.5); None when
+    # the reply only has the two LED bytes. Not in protocol 3.14.
+    alarm_flags: int | None = None
+    status_flags: int | None = None
+
+    @property
+    def vebus_error(self) -> int | None:
+        """Return the VE.Bus error code (0 = none), if reported."""
+        return None if self.status_flags is None else self.status_flags & 0x1F
+
+    @property
+    def block_mode(self) -> bool | None:
+        """Return True while another tool (e.g. VEConfigure) holds the bus."""
+        return None if self.status_flags is None else bool(self.status_flags & 0x80)
+
+    def condition(self, index: int) -> AlarmState | None:
+        """Return a condition of the alarm byte, if reported.
+
+        0 high temperature, 1 low battery, 2 overload, 3 ripple; bits 0..3
+        are warnings and bits 4..7 alarms.
+        """
+        if self.alarm_flags is None:
+            return None
+        if self.alarm_flags & (0x10 << index):
+            return AlarmState.ALARM
+        if self.alarm_flags & (0x01 << index):
+            return AlarmState.WARNING
+        return AlarmState.OK
 
     @property
     def known(self) -> bool:

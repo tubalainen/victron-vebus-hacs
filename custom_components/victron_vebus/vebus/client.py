@@ -130,6 +130,7 @@ FAST_RAM_VARS: tuple[RamVar, ...] = (
 SLOW_RAM_VARS: tuple[tuple[RamVar, ...], ...] = (
     (RamVar.U_BAT_RMS,),
     (RamVar.CHARGE_STATE,),
+    (RamVar.BATTERY_TEMPERATURE,),
     (
         RamVar.VIRTUAL_SWITCH_POSITION,
         RamVar.IGNORE_AC_INPUT_STATE,
@@ -176,7 +177,10 @@ MAX_ADDRESS = 0x1F
 SCAN_MISSES = 3
 # The MultiPlus-II reports the inverter current as unsigned but sends negative
 # values while charging, so it is always decoded as signed.
-FORCE_SIGNED_RAM_VARS = frozenset({RamVar.I_INVERTER_RMS})
+# Temperatures can be below zero, whatever the device reports.
+FORCE_SIGNED_RAM_VARS = frozenset({RamVar.I_INVERTER_RMS, RamVar.BATTERY_TEMPERATURE})
+# Undocumented RAM variables: a device that doesn't answer for them still works.
+OPTIONAL_RAM_VARS = frozenset({RamVar.BATTERY_TEMPERATURE})
 # 'S' data that selects Winmon mode 1 (short frames) without changing the
 # remote panel state: absolute limit format and do not send the panel state.
 S_MODE1_DATA = (
@@ -1542,10 +1546,16 @@ class VeBusClient:
         await _retry(functools.partial(self.set_address, self.address))
 
         for var in RAM_VARS:
-            if var not in self.ram_var_info:
+            if var in self.ram_var_info:
+                continue
+            try:
                 self.ram_var_info[var] = await _retry(
                     functools.partial(self.get_ram_var_info, var)
                 )
+            except VeBusTimeoutError, DecodeError:
+                if var not in OPTIONAL_RAM_VARS:
+                    raise
+                self.ram_var_info[var] = None
         missing = [v.name for v in INFO_FRAME_VARS if self.ram_var_info.get(v) is None]
         if missing:
             raise VeBusNotSupportedError(f"Device does not describe {missing}")
@@ -1613,7 +1623,11 @@ class VeBusClient:
 
     def _refill_slow_queue(self) -> None:
         for group in SLOW_RAM_VARS:
-            self._slow_queue.append(("ram", tuple(group)))
+            # Only variables the device describes: one it doesn't know fails
+            # the whole request (RAM 10 made 11 and 12 unknown up to 1.1.12).
+            supported = tuple(v for v in group if self.ram_var_info.get(v) is not None)
+            if supported:
+                self._slow_queue.append(("ram", supported))
         for setting in SLOW_SETTINGS:
             if self.setting_info.get(setting) is not None:
                 self._slow_queue.append(("setting", (setting,)))

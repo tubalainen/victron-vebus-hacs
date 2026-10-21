@@ -14,14 +14,17 @@ settings.
 | Battery voltage, current, power | Positive means charging. |
 | Charger current, Inverter DC current | DC side, from the DC info frame. |
 | State of charge | Only created if a battery capacity is configured in the device. |
+| Battery temperature | °C, from RAM variable 21 (since 1.1.13). Only created if the Multi describes that variable. Not documented by Victron (VictronConnect names it "Battery temperature"); compare it once with VictronConnect. Needs a temperature sensor on the Multi. |
 | Device state | down, startup, off, slave, invert_full/half/aes, power_assist, bypass (passthru), charge |
 | Charge state | not_charging, init, bulk, absorption, float, storage, repeated/forced absorption, equalise, bulk_stopped |
 | Mode, Front switch | The mode in effect and the physical switch position. |
 | Overload / Low battery / Temperature alarm | ok, warning (LED blinking), alarm (LED on) |
+| Ripple alarm | ok, warning, alarm, from the alarm byte of the `L` reply (since 1.1.13). Only created if the MK3 sends the full reply. Not documented by Victron (decoded as VictronConnect does); no repair issue or event yet. |
+| VE.Bus error code | Diagnostic. 0 = no error; the numbers are in Victron's VE.Bus error code list. From the `L` reply, like the ripple alarm. |
 | Alarm (event) | Fires when an alarm starts, escalates or clears. See [Alarm notifications](alarms.md). |
 | AC input energy imported / exported, AC output energy, Battery energy charged / discharged | kWh for the Energy dashboard. See [Energy](energy.md). |
 | AC input connected | Mains LED lit, i.e. the AC input relay is closed. |
-| Relay, Virtual switch, Ignore AC input | Diagnostic. |
+| Relay, Virtual switch, Ignore AC input | Diagnostic. Each only if the Multi describes the variable. Up to 1.1.12 Relay and Ignore AC input stayed unknown on devices without the virtual switch (such as a MultiPlus-II with firmware 556). |
 | AC input current limit (+ min/max) | Diagnostic; min/max are *(disabled)*. |
 | Absorption / float voltage, charge current limit, battery capacity | Diagnostic, read from the device settings. |
 | Inverter output voltage, Low battery shutdown / restart voltage, Charge characteristic, Maximum absorption time | Diagnostic, read from the device settings. The restart voltage is the shutdown voltage plus its hysteresis. |
