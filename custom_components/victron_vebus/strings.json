@@ -596,6 +596,15 @@
       "charge_current_limit": {
         "name": "Charge current limit",
         "state_attributes": {
+          "active_value_source": {
+            "name": "Active value source",
+            "state": {
+              "read": "Read from the Multi (RAM)",
+              "acknowledged": "Change acknowledged by the Multi",
+              "stored": "Stored value (RAM can't be read)",
+              "unverified": "Read from the Multi (RAM or stored not known yet)"
+            }
+          },
           "stored_value": {
             "name": "Stored value"
           }
@@ -604,6 +613,15 @@
       "configured_ac_input_current_limit": {
         "name": "Configured AC input current limit",
         "state_attributes": {
+          "active_value_source": {
+            "name": "Active value source",
+            "state": {
+              "read": "Read from the Multi (RAM)",
+              "acknowledged": "Change acknowledged by the Multi",
+              "stored": "Stored value (RAM can't be read)",
+              "unverified": "Read from the Multi (RAM or stored not known yet)"
+            }
+          },
           "stored_value": {
             "name": "Stored value"
           }
@@ -612,6 +630,15 @@
       "solar_wind_priority_voltage": {
         "name": "Solar & wind priority voltage",
         "state_attributes": {
+          "active_value_source": {
+            "name": "Active value source",
+            "state": {
+              "read": "Read from the Multi (RAM)",
+              "acknowledged": "Change acknowledged by the Multi",
+              "stored": "Stored value (RAM can't be read)",
+              "unverified": "Read from the Multi (RAM or stored not known yet)"
+            }
+          },
           "stored_value": {
             "name": "Stored value"
           }
@@ -620,6 +647,15 @@
       "configured_ac_input_2_current_limit": {
         "name": "Configured AC input 2 current limit",
         "state_attributes": {
+          "active_value_source": {
+            "name": "Active value source",
+            "state": {
+              "read": "Read from the Multi (RAM)",
+              "acknowledged": "Change acknowledged by the Multi",
+              "stored": "Stored value (RAM can't be read)",
+              "unverified": "Read from the Multi (RAM or stored not known yet)"
+            }
+          },
           "stored_value": {
             "name": "Stored value"
           }
@@ -646,6 +682,15 @@
       "absorption_voltage": {
         "name": "Absorption voltage",
         "state_attributes": {
+          "active_value_source": {
+            "name": "Active value source",
+            "state": {
+              "read": "Read from the Multi (RAM)",
+              "acknowledged": "Change acknowledged by the Multi",
+              "stored": "Stored value (RAM can't be read)",
+              "unverified": "Read from the Multi (RAM or stored not known yet)"
+            }
+          },
           "stored_value": {
             "name": "Stored value"
           }
@@ -654,6 +699,15 @@
       "float_voltage": {
         "name": "Float voltage",
         "state_attributes": {
+          "active_value_source": {
+            "name": "Active value source",
+            "state": {
+              "read": "Read from the Multi (RAM)",
+              "acknowledged": "Change acknowledged by the Multi",
+              "stored": "Stored value (RAM can't be read)",
+              "unverified": "Read from the Multi (RAM or stored not known yet)"
+            }
+          },
           "stored_value": {
             "name": "Stored value"
           }

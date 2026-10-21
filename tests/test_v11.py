@@ -230,11 +230,14 @@ async def test_ram_value_shown_over_stored_read_back(
     _, coordinator = await _setup(hass)
     fake_mk3.device.ram_only_mode = "readback_eeprom"
     entity_id = f"number.{PREFIX}_charge_current_limit"
-    assert "stored_value" not in hass.states.get(entity_id).attributes
+    attributes = hass.states.get(entity_id).attributes
+    assert attributes["active_value_source"] == "unverified"
+    assert "stored_value" not in attributes
     await _call(hass, "number", "set_value", {"entity_id": entity_id, "value": 39})
     await coordinator.async_refresh()
     state = hass.states.get(entity_id)
     assert state.state == "39.0"
+    assert state.attributes["active_value_source"] == "acknowledged"
     assert state.attributes["stored_value"] == 70.0
 
     await _unlock(hass)
@@ -248,7 +251,29 @@ async def test_ram_value_shown_over_stored_read_back(
     await coordinator.async_refresh()
     state = hass.states.get(entity_id)
     assert state.state == "39.0"
-    assert "stored_value" not in state.attributes
+    assert state.attributes["active_value_source"] == "stored"
+    assert state.attributes["stored_value"] == 39.0
+
+
+async def test_input_limit_read_from_the_multi(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """The configured limit in effect is read below the remote limit (1.1.5)."""
+    _, coordinator = await _setup(hass)
+    fake_mk3.device.ram_only_mode = "readback_eeprom"
+    fake_mk3.device.limit_follows_setting = True
+    configured = f"number.{PREFIX}_configured_ac_input_current_limit"
+    remote = f"number.{PREFIX}_remote_ac_input_current_limit"
+    await _call(hass, "number", "set_value", {"entity_id": configured, "value": 7})
+    await coordinator.client.poll(full=True)
+    await coordinator.async_refresh()
+    state = hass.states.get(configured)
+    assert state.state == "7.0"
+    assert state.attributes["active_value_source"] == "read"
+    assert state.attributes["stored_value"] == 16.0
+    # The remote panel limit is what the interface reports, not the 7 A
+    # in effect.
+    assert _state(hass, remote) == "16.0"
 
 
 async def test_buttons(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:

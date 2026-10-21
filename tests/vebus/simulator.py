@@ -73,7 +73,10 @@ class SimulatedMultiPlus:
     leds_on: int = 0x09
     leds_blink: int = 0x00
     switch_register: int = 0x30 | 0x03 | 0x04
-    current_limit: int = 160  # 0.1 A
+    current_limit: int = 160  # 0.1 A, the remote panel limit
+    # The limit in effect is the lower of the remote panel limit and the
+    # RAM value of setting 6, as on a MultiPlus-II.
+    limit_follows_setting: bool = False
     min_limit: int = 30
     max_limit: int = 500
     interface_flags: int = 0x05
@@ -266,7 +269,10 @@ class SimulatedMultiPlus:
         if kind == 5:
             inputs = 0x20 if self.quattro else 0x10
             d = [0x10, self.leds_on, self.leds_blink, 0, inputs]
-            d += _u16(self.min_limit) + _u16(self.max_limit) + _u16(self.current_limit)
+            actual = self.current_limit
+            if self.limit_follows_setting:
+                actual = min(actual, self.settings[6])
+            d += _u16(self.min_limit) + _u16(self.max_limit) + _u16(actual)
             d.append(self.switch_register)
             return [_raw_frame(0x41, d)]
         return []

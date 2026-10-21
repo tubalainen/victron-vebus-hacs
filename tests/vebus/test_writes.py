@@ -75,21 +75,39 @@ async def test_acknowledged_ram_write_with_eeprom_read_back() -> None:
     fake = FakeMK3()
     fake.device.ram_only_mode = "readback_eeprom"
     client = await _client(fake)
+    assert client.active_value_source(Setting.I_BAT_BULK) == "unverified"
     assert await client.write_setting(Setting.I_BAT_BULK, 39) == 39
     record = client.last_write
     assert record is not None
     assert record["reply"] == "0x88 setting written"
     assert record["readback"] == 70
     assert record["result"] == "ok (read back shows the stored value)"
+    assert client.readsetting_reports == "eeprom"
     assert client.ram_values == {4: 39}
-    assert client.stored_raw == {4: 70}
+    assert client.stored_raw[4] == 70
     assert client.unsaved_settings == {4}
+    assert client.active_value_source(Setting.I_BAT_BULK) == "acknowledged"
+    assert client.active_value_source(Setting.U_BAT_FLOAT) == "stored"
     assert fake.device.settings[4] == 39
 
-    # Polling keeps showing the value in effect, not the stored one.
+    # Polling keeps showing the value in effect, and learns stored values.
     await client.poll(full=True)
     assert client.state.settings[4] == 39
-    assert client.stored_raw == {4: 70}
+    assert client.stored_raw[4] == 70
+    assert client.stored_raw[3] == 2760
+    await client.close()
+
+
+async def test_read_back_showing_ram() -> None:
+    """A device whose ReadSetting follows RAM-only writes reports RAM."""
+    fake = FakeMK3()
+    client = await _client(fake)
+    await client.write_setting(Setting.I_BAT_BULK, 39)
+    assert client.readsetting_reports == "ram"
+    assert client.active_value_source(Setting.I_BAT_BULK) == "read"
+    assert client.ram_values == {}
+    assert client.stored_raw == {}
+    assert client.unsaved_settings == {4}
     await client.close()
 
 
@@ -102,15 +120,16 @@ async def test_save_writes_the_ram_value() -> None:
     assert await client.save_settings() == [4]
     assert fake.device.eeprom[4] == 39
     assert client.ram_values == {}
-    assert client.stored_raw == {}
+    assert client.stored_raw[4] == 39
     assert client.unsaved_settings == set()
+    assert client.active_value_source(Setting.I_BAT_BULK) == "stored"
     await client.poll(full=True)
     assert client.state.settings[4] == 39
     await client.close()
 
 
-async def test_writing_the_stored_value_drops_the_override() -> None:
-    """Changing back to the stored value needs no RAM override."""
+async def test_writing_the_stored_value_leaves_nothing_to_save() -> None:
+    """Changing back to the stored value needs no EEPROM write."""
     fake = FakeMK3()
     fake.device.ram_only_mode = "readback_eeprom"
     client = await _client(fake)
@@ -119,7 +138,27 @@ async def test_writing_the_stored_value_drops_the_override() -> None:
     assert client.last_write is not None
     assert client.last_write["result"] == "ok"
     assert client.ram_values == {}
-    assert client.stored_raw == {}
+    assert client.stored_raw[4] == 70
+    assert client.unsaved_settings == set()
+    assert client.active_value_source(Setting.I_BAT_BULK) == "stored"
+    await client.close()
+
+
+async def test_save_skips_values_equal_to_the_stored_ones() -> None:
+    """Only RAM values that differ from the stored ones are written."""
+    fake = FakeMK3()
+    fake.device.ram_only_mode = "readback_eeprom"
+    client = await _client(fake)
+    # Written before the device showed that ReadSetting reports EEPROM.
+    await client.write_setting(Setting.U_BAT_FLOAT, 27.6)
+    assert client.readsetting_reports is None
+    assert client.unsaved_settings == {3}
+    await client.write_setting(Setting.I_BAT_BULK, 39)
+    assert client.unsaved_settings == {3, 4}
+    writes = len(fake.device.writes)
+    assert await client.save_settings() == [4]
+    assert fake.device.writes[writes:] == [(0x01, 4, 39)]
+    assert client.unsaved_settings == set()
     await client.close()
 
 
@@ -144,8 +183,25 @@ async def test_restart_forgets_ram_values() -> None:
     await client.write_setting(Setting.I_BAT_BULK, 39)
     await client.restart_device()
     assert client.ram_values == {}
-    assert client.stored_raw == {}
     assert client.unsaved_settings == set()
+    assert client.active_value_source(Setting.I_BAT_BULK) == "stored"
+    # The stored values did not change.
+    assert client.stored_raw[4] == 70
+    await client.close()
+
+
+async def test_reconnect_forgets_what_was_learnt() -> None:
+    """Nothing learnt from the device is kept across connections."""
+    fake = FakeMK3()
+    fake.device.ram_only_mode = "readback_eeprom"
+    client = await _client(fake)
+    await client.write_setting(Setting.I_BAT_BULK, 39)
+    await client.close()
+    await client.connect()
+    assert client.readsetting_reports is None
+    assert client.ram_values == {}
+    assert client.stored_raw == {}
+    assert client.active_value_source(Setting.I_BAT_BULK) == "unverified"
     await client.close()
 
 
