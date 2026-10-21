@@ -29,7 +29,8 @@
 |---|---|---|
 | Polling interval | 2 s | The MK3 runs at 2400 baud and a full poll takes about one second. |
 | Show alarms as repair issues | on | Raise a repair issue while an overload, low battery or temperature alarm is active. See [Alarm notifications](alarms.md). |
-| Enable battery operational limits | off | Only with *Monitor and control*. See [Battery operational limits](ess-and-bms.md#battery-operational-limits-advanced-beta). |
+| Enable battery operational limits | off | Experimental. Only with *Monitor and control*. See [Battery operational limits](ess-and-bms.md#battery-operational-limits-advanced-experimental). |
+| Enable ESS external control | off | Experimental. Only with *Monitor and control* and the ESS assistant. See [ESS external control](ess-and-bms.md#ess-external-control-experimental). |
 
 Monitoring or control is not an option here: it is chosen when the integration is
 added, or with *Reconfigure*.

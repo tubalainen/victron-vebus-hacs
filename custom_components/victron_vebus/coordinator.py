@@ -19,9 +19,11 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BATTERY_LIMITS_STALE,
     CONF_ALARM_ISSUES,
     CONF_ENABLE_BATTERY_LIMITS,
     CONF_ENABLE_CONTROLS,
+    CONF_ENABLE_ESS_CONTROL,
     CONF_SCAN_INTERVAL,
     CRITICAL_UNLOCK_DURATION,
     DEFAULT_SCAN_INTERVAL,
@@ -45,6 +47,7 @@ from .vebus import (
     Setting,
     SettingFlag,
     VeBusClient,
+    VeBusConnectionError,
     VeBusError,
     VeBusState,
     VeBusTimeoutError,
@@ -130,6 +133,9 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         # Battery Operational Limits, sent on every poll once set.
         self.battery_limits: BatteryLimits | None = None
         self._battery_limits_timeout_logged = False
+        # When battery limits were last sent successfully.
+        self._battery_limits_sent_at: float | None = None
+        self._battery_limits_issue = False
         # Setting ranges missing after start-up are read again from here.
         self._ranges_retry_at = time.monotonic() + RANGES_FIRST_RETRY
         self._unavailable_since: float | None = None
@@ -140,11 +146,15 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         # "Allow critical changes": until when critical entities may be used.
         self.critical_allowed_until: datetime | None = None
         self._cancel_relock: CALLBACK_TYPE | None = None
-        # Last AC input current limit above 0 A, to leave passthru with.
+        # Last AC input current limit above 0 A in effect, and the last
+        # remote panel limit above 0 A the interface reported: to leave
+        # passthru with.
         self.last_current_limit: float | None = None
-        # Passthru requested (remote current limit 0 A). The device may
-        # report its minimum limit instead of 0 A, so this is remembered.
+        self.last_remote_limit: float | None = None
+        # Passthru (remote current limit 0 A). Taken from the interface's
+        # panel state when it reports one; otherwise what was requested.
         self.passthru = False
+        self._boot_frames = client.stats.boot_frames
         self._link_issue = False
         self.data = client.state
 
@@ -225,19 +235,72 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
             and self.client.supports_battery_limits
         )
 
-    async def _async_periodic_writes(self) -> None:
-        """Refresh the ESS setpoints and battery limits before every poll.
+    @property
+    def ess_control_enabled(self) -> bool:
+        """Return True if ESS external control is enabled (experimental)."""
+        return bool(
+            self.config_entry.options.get(CONF_ENABLE_ESS_CONTROL, False)
+            and self.client.ess_records
+        )
 
-        Also reads setting ranges that are still missing, every few minutes.
+    async def _async_periodic_writes(self) -> None:
+        """Refresh the battery limits and ESS setpoints before every poll.
+
+        Battery limits come first and fail on their own: the Multi stops
+        charging and inverting when they stop arriving. Setting ranges that
+        are still missing are read last, every few minutes.
         """
-        await self._async_retry_ranges()
-        if self.ess_control:
-            await self._async_write_ess_setpoints()
         if self.battery_limits is not None and self.battery_limits_enabled:
-            reply = await self.client.send_battery_limits(self.battery_limits)
-            if reply.timeout and not self._battery_limits_timeout_logged:
-                _LOGGER.warning("The device reports missing battery limit information")
-                self._battery_limits_timeout_logged = True
+            try:
+                reply = await self.client.send_battery_limits(self.battery_limits)
+            except VeBusConnectionError:
+                raise
+            except VeBusError as err:
+                _LOGGER.warning("Sending the battery limits failed: %s", err)
+            else:
+                self._battery_limits_sent_at = time.monotonic()
+                if reply.timeout and not self._battery_limits_timeout_logged:
+                    _LOGGER.warning(
+                        "The device reports missing battery limit information"
+                    )
+                    self._battery_limits_timeout_logged = True
+            self._async_check_battery_limits_age()
+        if self.ess_control:
+            try:
+                await self._async_write_ess_setpoints()
+            except VeBusConnectionError:
+                raise
+            except VeBusError as err:
+                _LOGGER.warning("Writing the ESS setpoint failed: %s", err)
+        await self._async_retry_ranges()
+
+    @callback
+    def _async_check_battery_limits_age(self) -> None:
+        """Raise a repair issue while the battery limits aren't getting through."""
+        sent = self._battery_limits_sent_at
+        stale = sent is None or time.monotonic() - sent > BATTERY_LIMITS_STALE
+        if stale and sent is None:
+            # Not sent yet since start-up: give it the same time.
+            self._battery_limits_sent_at = sent = time.monotonic()
+            stale = False
+        if stale and not self._battery_limits_issue:
+            self._battery_limits_issue = True
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                self._battery_limits_issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.CRITICAL,
+                translation_key="battery_limits_stale",
+                translation_placeholders={"name": self.config_entry.title},
+            )
+        elif not stale and self._battery_limits_issue:
+            self._battery_limits_issue = False
+            ir.async_delete_issue(self.hass, DOMAIN, self._battery_limits_issue_id)
+
+    @property
+    def _battery_limits_issue_id(self) -> str:
+        return f"battery_limits_stale_{self.config_entry.entry_id}"
 
     async def _async_retry_ranges(self) -> None:
         """Read missing setting ranges and announce the entities they allow."""
@@ -280,6 +343,10 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         Stopping writes a setpoint of 0 W, which returns the assistant to its
         standard behaviour.
         """
+        if enabled and not self.ess_control_enabled:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="ess_control_disabled"
+            )
         self.ess_control = enabled
         self._ess_written.clear()
         if enabled:
@@ -313,7 +380,8 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
 
     @callback
     def _async_check_alarms(self, state: VeBusState) -> None:
-        if state.leds is None:
+        if state.leds is None or not state.leds.known:
+            # Unknown LEDs neither raise nor clear an alarm.
             return
         for alarm, led in ALARM_LEDS.items():
             level = state.leds.alarm(led)
@@ -359,6 +427,7 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         for alarm in ALARM_LEDS:
             ir.async_delete_issue(self.hass, DOMAIN, self._alarm_issue_id(alarm))
         ir.async_delete_issue(self.hass, DOMAIN, self._link_issue_id)
+        ir.async_delete_issue(self.hass, DOMAIN, self._battery_limits_issue_id)
 
     @property
     def critical_allowed(self) -> bool:
@@ -399,7 +468,7 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
             )
 
     async def async_release(self) -> None:
-        """Hand ESS control back to the device before unloading."""
+        """Hand ESS control back to the device (unload, Home Assistant stop)."""
         if self._cancel_relock is not None:
             self._cancel_relock()
             self._cancel_relock = None
@@ -430,10 +499,25 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
         self._async_check_link()
         self._async_check_alarms(state)
+        self._async_track_passthru(state)
         config = state.config
         if config is not None and config.actual_current_limit > 0 and not self.passthru:
             self.last_current_limit = config.actual_current_limit
         self.async_set_updated_data(state)
+
+    @callback
+    def _async_track_passthru(self, state: VeBusState) -> None:
+        """Follow passthru from the device rather than from Home Assistant."""
+        boots = self.client.stats.boot_frames
+        if boots != self._boot_frames:
+            # The device restarted: its remote panel state is reset.
+            self._boot_frames = boots
+            self.passthru = False
+        remote = state.remote_current_limit
+        if remote is not None:
+            self.passthru = remote == 0
+            if remote > 0:
+                self.last_remote_limit = remote
 
     @callback
     def _async_check_link(self) -> None:

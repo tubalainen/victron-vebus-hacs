@@ -117,6 +117,12 @@ async def test_quattro_ac_input_2(hass: HomeAssistant, fake_mk3: FakeMK3) -> Non
     assert _state(hass, f"sensor.{PREFIX}_active_ac_input") == "ac_in_1"
     number = f"number.{PREFIX}_configured_ac_input_2_current_limit"
     await hass.services.async_call(
+        "switch",
+        "turn_on",
+        {"entity_id": f"switch.{PREFIX}_allow_critical_changes"},
+        blocking=True,
+    )
+    await hass.services.async_call(
         "number", "set_value", {"entity_id": number, "value": 20}, blocking=True
     )
     assert fake_mk3.device.settings[49] == 200

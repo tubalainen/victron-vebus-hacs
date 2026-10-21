@@ -131,7 +131,10 @@ def _led(led: Led) -> Callable[[VeBusState], StateType]:
 
 
 def _alarm(led: Led) -> Callable[[VeBusState], StateType]:
-    return lambda state: state.leds.alarm(led).value if state.leds else None
+    # Unknown LEDs (0x1F) say nothing about the alarms: not "ok".
+    return lambda state: (
+        state.leds.alarm(led).value if state.leds and state.leds.known else None
+    )
 
 
 def _mode(attr: str) -> Callable[[VeBusState], StateType]:

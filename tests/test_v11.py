@@ -167,8 +167,12 @@ async def test_passthru_switch(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
 
 async def test_flag_switches(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     """PowerAssist, weak AC and UPS need the lock; changes are RAM only."""
-    await _setup(hass)
+    entry, _ = await _setup(hass)
     ups = f"switch.{PREFIX}_ups_function"
+    # Disabled by default since 1.1.11 (experimental): enable it.
+    er.async_get(hass).async_update_entity(ups, disabled_by=None)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
     risk = await _refused(hass, "switch", "turn_off", {"entity_id": ups})
     assert "short interruption" in risk
     assert fake_mk3.device.writes == []
@@ -201,11 +205,36 @@ async def test_voltage_numbers(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     assert _state(hass, entity_id) == "27.0"
 
 
-async def test_routine_controls_need_no_lock(
+async def test_which_controls_need_the_lock(
     hass: HomeAssistant, fake_mk3: FakeMK3
 ) -> None:
-    """Current limits and force absorption work without the lock."""
+    """The remote limit and force absorption are routine; others are critical.
+
+    Since 1.1.11 the charge current, the configured AC input limits and a
+    remote limit of 0 A (passthru) need "Allow critical changes".
+    """
+    # With PowerAssist off the device's minimum limit is 0 A.
+    fake_mk3.device.min_limit = 0
     await _setup(hass)
+    remote = f"number.{PREFIX}_remote_ac_input_current_limit"
+    await _call(hass, "number", "set_value", {"entity_id": remote, "value": 10})
+    assert int.from_bytes(_remote_frames(fake_mk3)[-1][4:6], "little") == 100
+    risk = await _refused(
+        hass, "number", "set_value", {"entity_id": remote, "value": 0}
+    )
+    assert "charger stops" in risk
+    await _refused(
+        hass,
+        "number",
+        "set_value",
+        {"entity_id": f"number.{PREFIX}_charge_current_limit", "value": 50},
+    )
+    assert fake_mk3.device.writes == []
+    await _call(
+        hass, "button", "press", {"entity_id": f"button.{PREFIX}_force_absorption"}
+    )
+    assert fake_mk3.device.forced == [2]
+    await _unlock(hass)
     await _call(
         hass,
         "number",
@@ -213,10 +242,6 @@ async def test_routine_controls_need_no_lock(
         {"entity_id": f"number.{PREFIX}_charge_current_limit", "value": 50},
     )
     assert fake_mk3.device.settings[4] == 50
-    await _call(
-        hass, "button", "press", {"entity_id": f"button.{PREFIX}_force_absorption"}
-    )
-    assert fake_mk3.device.forced == [2]
 
 
 async def test_ram_value_shown_over_stored_read_back(
@@ -233,6 +258,7 @@ async def test_ram_value_shown_over_stored_read_back(
     attributes = hass.states.get(entity_id).attributes
     assert attributes["active_value_source"] == "unverified"
     assert "stored_value" not in attributes
+    await _unlock(hass)
     await _call(hass, "number", "set_value", {"entity_id": entity_id, "value": 39})
     await coordinator.async_refresh()
     state = hass.states.get(entity_id)
@@ -266,6 +292,7 @@ async def test_configured_and_remote_limits(
     remote = f"number.{PREFIX}_remote_ac_input_current_limit"
     assert _state(hass, remote) == "unknown"
     await _call(hass, "number", "set_value", {"entity_id": remote, "value": 16})
+    await _unlock(hass)
     await _call(hass, "number", "set_value", {"entity_id": configured, "value": 7})
     await coordinator.client.poll(full=True)
     await coordinator.async_refresh()

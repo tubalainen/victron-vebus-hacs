@@ -56,6 +56,10 @@
         "data": {
           "acknowledge": "I understand: I will not change settings I am not sure about, and I accept full responsibility for what I change"
         }
+      },
+      "disable_battery_limits": {
+        "title": "Turn off battery operational limits",
+        "description": "Monitoring only switches battery operational limits off. The Multi keeps expecting them until it restarts: **it stops charging and inverting 5 minutes after Home Assistant stops sending them**. Restart the Multi (switch it off and on) within 5 minutes after confirming, or keep *Monitor and control*.\n\n**A restart power cycles every device connected to AC out 1 and AC out 2.**"
       }
     },
     "error": {
@@ -87,12 +91,14 @@
         "data": {
           "scan_interval": "Polling interval",
           "alarm_issues": "Show alarms as repair issues",
-          "enable_battery_limits": "Enable battery operational limits (BMS)"
+          "enable_battery_limits": "Enable battery operational limits (BMS, experimental)",
+          "enable_ess_control": "Enable ESS external control (experimental)"
         },
         "data_description": {
           "scan_interval": "Seconds between polls. At 2400 baud one poll takes about a second.",
           "alarm_issues": "Raise a repair issue while the Multi reports an overload, low battery or temperature alarm. Warnings (pre-alarms) and alarms are always available as events of the Alarm entity.",
-          "enable_battery_limits": "Advanced, lithium batteries only. Creates four numbers whose limits are sent to the Multi on every poll, like a battery management system. WARNING: once the Multi has received limits, it stops charging AND inverting if it gets none for 5 minutes, and keeps expecting them until it is restarted (a restart power cycles AC out 1 and AC out 2). Needs device firmware 415 or later."
+          "enable_battery_limits": "Advanced, lithium batteries only. Creates four numbers whose limits are sent to the Multi on every poll, like a battery management system. WARNING: once the Multi has received limits, it stops charging AND inverting if it gets none for 5 minutes, and keeps expecting them until it is restarted (a restart power cycles AC out 1 and AC out 2). Needs device firmware 415 or later.",
+          "enable_ess_control": "Only with the ESS assistant. Creates the switch and setpoint numbers that let Home Assistant control how much power is taken from or fed into the grid. Not verified on hardware: the sign of the setpoint and what the Multi does when the setpoint stops being refreshed are untested. Control always starts off and is handed back (0 W) when Home Assistant stops."
         },
         "title": "Integration settings",
         "description": "Monitoring or control is chosen when the integration is added, or with *Reconfigure*."
@@ -153,10 +159,17 @@
         "data": {
           "acknowledge": "I understand the risks and want to continue"
         }
+      },
+      "enable_experimental": {
+        "title": "Enable an experimental function",
+        "description": "Battery operational limits and ESS external control have only been tested against a simulator, not on a real Multi.\n\n- **Battery limits:** once the Multi has received them, it **stops charging AND inverting** if they don't arrive for 5 minutes, until it is restarted. A wrong charge voltage can overcharge the battery. Lithium batteries with a BMS only, never lead.\n- **ESS control:** a wrong sign turns import into export. If Home Assistant crashes, the last setpoint may stay in effect until the ESS assistant's own timeout.\n\nUse them only if you understand these risks and can supervise the system.",
+        "data": {
+          "acknowledge": "I understand the risks"
+        }
       }
     },
     "error": {
-      "acknowledge_required": "Tick the box to confirm that you understand the risks.",
+      "acknowledge_required": "Confirm that you understand the risks to continue.",
       "invalid_value": "Invalid value: {error}",
       "command_failed": "The device did not accept the command: {error}"
     },
@@ -759,6 +772,15 @@
     },
     "nothing_to_save": {
       "message": "No settings were changed since the Multi last started or since the last save."
+    },
+    "remote_mode_unknown": {
+      "message": "The mode requested through the remote panel isn't known yet; try again in a moment."
+    },
+    "limit_unknown": {
+      "message": "No AC input current limit is known to resume grid charging with; give the limit explicitly."
+    },
+    "ess_control_disabled": {
+      "message": "ESS external control is turned off in the integration settings."
     }
   },
   "issues": {
@@ -781,6 +803,10 @@
     "poor_link": {
       "title": "{name}: poor connection to the VE.Bus device",
       "description": "Only {rate}% of the requests to the VE.Bus device on {device} were answered in the last 5 minutes. Values can be missing or late, and commands can fail.\n\nCheck:\n- the RJ45 cable between the MK3 and the Multi: firmly plugged in, not damaged, and not running alongside power cables;\n- the USB connection of the MK3: try another port or a short USB extension, away from USB 3 ports and other sources of interference;\n- whether other devices on the VE.Bus (a GX device, another MK3 or VictronConnect) are busy at the same time;\n- a longer polling interval in the integration settings.\n\nThe *Link quality* and *Request timeouts* sensors show how the connection is doing. This message disappears by itself when the connection is good again."
+    },
+    "battery_limits_stale": {
+      "title": "{name}: battery limits are not getting through",
+      "description": "Home Assistant hasn't been able to send the battery operational limits to the Multi for more than 2 minutes. **If none arrive for 5 minutes, the Multi stops charging AND inverting** until it is restarted, and the AC outputs lose power when there is no grid.\n\nCheck the connection to the MK3 and the Multi. This message disappears by itself once limits are sent again."
     }
   },
   "services": {

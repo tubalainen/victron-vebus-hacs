@@ -11,17 +11,21 @@
 With *Monitor and control*, every control is an entity on the Multi's device page, so
 it can be used from dashboards, automations, scripts and voice assistants.
 
-**Routine controls** work directly: current limits, charge current, force absorption or
-float, solar & wind priority and ESS.
+**Routine controls** work directly: the remote AC input current limit (above 0 A),
+force absorption or float, and solar & wind priority.
 
 **Critical controls** can cut the power on AC out 1 and AC out 2, restart the Multi,
 change battery charge voltages or write the EEPROM. They are locked:
 
 1. Turn on **Allow critical changes** (under *Configuration* on the device page). It
    turns itself off again after 10 minutes; its `turns_off_at` attribute says when.
-2. Use the critical control: **Mode**, **Stop grid charging (0 A)**, **PowerAssist**, **Weak AC
-   input**, **UPS function**, **Absorption voltage**, **Float voltage**, **Start
-   equalisation**, **Restart the Multi** or **Save settings permanently**.
+2. Use the critical control: **Mode**, **Stop grid charging (0 A)** (or a remote limit
+   of 0 A), **PowerAssist**, **Weak AC input**, **UPS function**, **Absorption
+   voltage**, **Float voltage**, **Charge current limit**, **Configured AC input
+   current limit(s)**, the **battery limits**, **Start equalisation**, **Restart the
+   Multi** or **Save settings permanently**. Since 1.1.11 the charge current and the
+   configured AC input limits are critical too: a wrong value can damage the battery or
+   trip a breaker.
 3. Turn **Allow critical changes** off again when you are done. While it is on, *every*
    critical change is allowed, by anyone using the dashboard.
 
@@ -40,8 +44,13 @@ stops and the grid is passed straight through to the AC outputs (Victron calls t
 expensive hours or on a weak generator. Normal operation (mode *On*) does **not** need
 it: then the Multi passes the grid through and charges the battery at the same time, and
 the *Device state* sensor shows *Passthru* whenever the battery needs no charging.
-Turning the switch off restores the last limit (or the configured AC input limit).
-Changing the mode while grid charging is stopped keeps the 0 A limit. See
+Turning the switch off restores the last remote limit above 0 A, else the last limit
+in effect, else the configured limit of the active AC input. There is no fixed default
+(it could be above the breaker): if no limit is known, give one in the guided dialog.
+The switch follows the remote panel state the MK3 reports, and turns off when the
+Multi restarts. Changing the mode while grid charging is stopped keeps the 0 A limit,
+and a mode change or a new limit keeps the mode requested through the remote panel
+(not the mode in effect, which also depends on the Multi's front switch). See
 [Modes and Stop grid charging compared](#modes-and-stop-grid-charging-compared).
 
 For an extra confirmation on a dashboard, use a card's own confirmation, for example
@@ -242,6 +251,10 @@ What the switches do:
 - PowerAssist, weak AC input and UPS function are critical switches (behind *Allow
   critical changes*) because they affect how the Multi transfers between grid and
   inverter.
+- **UPS function** is experimental and disabled by default (enable the entity to use
+  it). Victron's protocol says flag 7 must always be the inverse of the UPS bit
+  (flag 3); the integration changes only the UPS bit, as VEConfigure was seen to do.
+  This hasn't been verified on hardware.
 
 Requirements:
 

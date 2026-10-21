@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -76,6 +77,13 @@ async def test_setting_numbers(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     assert state.attributes["min"] == 0
     assert state.attributes["max"] == 70
 
+    # The charge current is a critical change (1.1.11).
+    await hass.services.async_call(
+        "switch",
+        "turn_on",
+        {"entity_id": f"switch.{PREFIX}_allow_critical_changes"},
+        blocking=True,
+    )
     await hass.services.async_call(
         "number", "set_value", {"entity_id": entity_id, "value": 50}, blocking=True
     )
@@ -100,9 +108,12 @@ async def test_flag_binary_sensors(hass: HomeAssistant, fake_mk3: FakeMK3) -> No
     assert _state(hass, f"binary_sensor.{PREFIX}_powerassist") == "on"
     assert _state(hass, f"binary_sensor.{PREFIX}_weak_ac_input") == "off"
     assert _state(hass, f"binary_sensor.{PREFIX}_ups_function") == "on"
-    # Since 1.1 they can also be switched, behind the critical lock.
+    # Since 1.1 they can also be switched, behind the critical lock. The UPS
+    # switch is disabled by default since 1.1.11 (experimental).
     assert _state(hass, f"switch.{PREFIX}_powerassist") == "on"
-    assert _state(hass, f"switch.{PREFIX}_ups_function") == "on"
+    entry = er.async_get(hass).async_get(f"switch.{PREFIX}_ups_function")
+    assert entry is not None
+    assert entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
 
 
 async def test_solar_wind_priority(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:

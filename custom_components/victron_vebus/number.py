@@ -2,7 +2,9 @@
 
 The remote panel current limit, and charger settings changed in RAM only (the
 device's stored configuration is not changed until it is saved permanently;
-a restart restores it). Charge voltages are critical changes.
+a restart restores it). Charge voltages, the charge current and the
+configured AC input current limits are critical changes, and so is a remote
+limit of 0 A (passthru).
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from . import actions
 from .const import DOMAIN, ESS_SETPOINT_LIMIT
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
 from .entity import VeBusEntity, async_add_when_ready
-from .vebus import Mode, Setting, VeBusError
+from .vebus import Setting, VeBusError
 from .vebus.models import BatteryLimits, ConfigInfo, VeBusState
 
 PARALLEL_UPDATES = 1
@@ -91,6 +93,8 @@ SETTING_NUMBERS: tuple[VeBusSettingNumberEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
+        critical=True,
+        label="Charge current limit",
     ),
     VeBusSettingNumberEntityDescription(
         key="configured_ac_input_current_limit",
@@ -100,6 +104,8 @@ SETTING_NUMBERS: tuple[VeBusSettingNumberEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
+        critical=True,
+        label="Configured AC input current limit",
     ),
     VeBusSettingNumberEntityDescription(
         key="configured_ac_input_2_current_limit",
@@ -109,6 +115,8 @@ SETTING_NUMBERS: tuple[VeBusSettingNumberEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
+        critical=True,
+        label="Configured AC input 2 current limit",
     ),
     VeBusSettingNumberEntityDescription(
         key="solar_wind_priority_voltage",
@@ -144,7 +152,11 @@ async def async_setup_entry(
             for description in SETTING_NUMBERS
         ],
     )
-    ess_addresses = sorted(coordinator.client.ess_records)
+    ess_addresses = (
+        sorted(coordinator.client.ess_records)
+        if coordinator.ess_control_enabled
+        else []
+    )
     for address in ess_addresses:
         entities.append(
             VeBusEssSetpointNumber(coordinator, address, len(ess_addresses) > 1)
@@ -205,9 +217,15 @@ class VeBusCurrentLimitNumber(VeBusEntity, NumberEntity):
         return config.maximum_current_limit if config else 100.0
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the limit without changing the mode currently in effect."""
-        config = self._config
-        mode = config.mode if config and config.mode else Mode.ON
+        """Set the limit without changing the remote mode.
+
+        0 A stops grid charging (passthru), a critical change.
+        """
+        if value == 0:
+            self.coordinator.require_critical_allowed(
+                "Remote AC input current limit 0 A", actions.PASSTHRU_RISK
+            )
+        mode = actions.panel_mode(self.coordinator)
         try:
             await self.coordinator.client.set_remote_panel_state(mode, value)
             self.coordinator.passthru = value == 0
@@ -345,6 +363,7 @@ class VeBusBatteryLimitNumberEntityDescription(NumberEntityDescription):
 
     field: str  # attribute of BatteryLimits
     default_fn: Callable[[VeBusState], float | None]
+    label: str
 
 
 BATTERY_LIMIT_NUMBERS: tuple[VeBusBatteryLimitNumberEntityDescription, ...] = (
@@ -352,6 +371,7 @@ BATTERY_LIMIT_NUMBERS: tuple[VeBusBatteryLimitNumberEntityDescription, ...] = (
         key="bms_charge_voltage",
         translation_key="bms_charge_voltage",
         field="charge_voltage",
+        label="Battery limit charge voltage",
         device_class=NumberDeviceClass.VOLTAGE,
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         native_min_value=0,
@@ -365,6 +385,7 @@ BATTERY_LIMIT_NUMBERS: tuple[VeBusBatteryLimitNumberEntityDescription, ...] = (
         key="bms_charge_current",
         translation_key="bms_charge_current",
         field="charge_current",
+        label="Battery limit charge current",
         device_class=NumberDeviceClass.CURRENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         native_min_value=0,
@@ -378,6 +399,7 @@ BATTERY_LIMIT_NUMBERS: tuple[VeBusBatteryLimitNumberEntityDescription, ...] = (
         key="bms_discharge_voltage",
         translation_key="bms_discharge_voltage",
         field="discharge_voltage",
+        label="Battery limit discharge voltage",
         device_class=NumberDeviceClass.VOLTAGE,
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         native_min_value=0,
@@ -391,6 +413,7 @@ BATTERY_LIMIT_NUMBERS: tuple[VeBusBatteryLimitNumberEntityDescription, ...] = (
         key="bms_discharge_current",
         translation_key="bms_discharge_current",
         field="discharge_current",
+        label="Battery limit discharge current",
         device_class=NumberDeviceClass.CURRENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         native_min_value=0,
@@ -462,8 +485,26 @@ class VeBusBatteryLimitNumber(VeBusEntity, RestoreNumber):
         return self._limits.values.get(self.entity_description.field)
 
     async def async_set_native_value(self, value: float) -> None:
-        """Change the limit and send the limits right away."""
-        limits = self._limits.update(self.entity_description.field, value)
+        """Change the limit and send the limits right away (critical).
+
+        Voltages must lie within the range of the absorption voltage setting
+        (a discharge voltage of 0 V sets no limit).
+        """
+        description = self.entity_description
+        # A discharge voltage of 0 V (the default) sets no limit.
+        no_limit = description.field == "discharge_voltage" and value == 0
+        if description.device_class is NumberDeviceClass.VOLTAGE and not no_limit:
+            error = actions.check_battery_limit_voltage(self.coordinator, value)
+            if error is not None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="invalid_value",
+                    translation_placeholders={"error": error},
+                )
+        self.coordinator.require_critical_allowed(
+            f"{description.label} {value:g}", actions.BATTERY_LIMIT_RISK
+        )
+        limits = self._limits.update(description.field, value)
         if limits is not None:
             await self.async_device_call(
                 self.coordinator.async_set_battery_limits(limits)

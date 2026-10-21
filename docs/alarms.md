@@ -10,6 +10,8 @@ and the Multi usually switches off the inverter, so the AC outputs can lose powe
   `<alarm>_cleared` (for example `low_battery_warning`), with the attributes `alarm`
   and `level`. An alarm that is already active when Home Assistant starts is reported
   too.
+- When the MK3 can't read the LEDs (it reports 0x1F/0x1F), the alarm sensors are
+  *unknown* and nothing is reported or cleared until the LEDs are known again.
 - While an alarm is active, a **repair issue** explains what it means and what to
   check. It disappears when the alarm clears. Turn off *Show alarms as repair issues*
   in the integration settings if you don't want them.

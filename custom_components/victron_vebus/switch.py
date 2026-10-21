@@ -72,6 +72,9 @@ FLAG_SWITCHES: tuple[VeBusFlagSwitchEntityDescription, ...] = (
         key="ups_function",
         translation_key="ups_function",
         entity_category=EntityCategory.CONFIG,
+        # Experimental: Victron's protocol says flag 7 must be the inverse of
+        # this bit, and only this bit is changed (as VEConfigure was seen to).
+        entity_registry_enabled_default=False,
         setting=Setting.FLAGS_0,
         flag=SettingFlag.DISABLE_WAVE_CHECK,
         inverted=True,
@@ -151,7 +154,7 @@ async def async_setup_entry(
                 for description in FLAG_SWITCHES
             ],
         )
-        if coordinator.client.ess_records:
+        if coordinator.ess_control_enabled:
             entities.append(VeBusEssControlSwitch(coordinator, ESS_CONTROL))
             entities.extend(
                 VeBusEssFlagSwitch(coordinator, description)
@@ -289,10 +292,10 @@ class VeBusPassthruSwitch(VeBusEntity, SwitchEntity, RestoreEntity):
     Victron calls this passthru: the charger stops and the grid is passed
     straight through. Normal operation (mode on) does not need it.
 
-    The device may report its minimum limit instead of 0 A, so the state is
-    what was requested; it is restored after a Home Assistant restart.
-    Turning it off restores the last current limit above 0 A, or else the
-    configured AC input current limit.
+    The state follows the remote panel limit the interface reports; when it
+    reports none, it is what was requested (restored after a restart of Home
+    Assistant, cleared when the device restarts). Turning it off restores the
+    last limit above 0 A (see actions.resume_limit).
     """
 
     async def async_added_to_hass(self) -> None:
@@ -337,31 +340,19 @@ class VeBusPassthruSwitch(VeBusEntity, SwitchEntity, RestoreEntity):
         coordinator.require_critical_allowed(
             "Stop grid charging off", actions.PASSTHRU_LEAVE_RISK
         )
-        limit = (
-            coordinator.last_current_limit
-            or coordinator.data.setting_value(Setting.I_MAINS_LIMIT_AC1)
-            or actions.DEFAULT_CURRENT_LIMIT
-        )
         await self.async_device_call(
-            actions.async_set_passthru(coordinator, False, limit)
+            actions.async_set_passthru(coordinator, False, None)
         )
 
 
-class VeBusEssControlSwitch(VeBusEntity, SwitchEntity, RestoreEntity):
-    """Lets Home Assistant control the ESS grid setpoint.
+class VeBusEssControlSwitch(VeBusEntity, SwitchEntity):
+    """Lets Home Assistant control the ESS grid setpoint (experimental).
 
     While on, the setpoint numbers are written to the ESS assistant and
     refreshed regularly. Turning it off writes 0 W, which returns the
-    assistant to its standard behaviour. The state is restored on restart.
+    assistant to its standard behaviour, and so does stopping Home Assistant.
+    It always starts off: control is never resumed without a person asking.
     """
-
-    async def async_added_to_hass(self) -> None:
-        """Restore the previous state."""
-        await super().async_added_to_hass()
-        last_state = await self.async_get_last_state()
-        if last_state is not None and last_state.state == STATE_ON:
-            # Resume control; the setpoint numbers restore their values too.
-            self.coordinator.ess_control = True
 
     @property
     def is_on(self) -> bool:

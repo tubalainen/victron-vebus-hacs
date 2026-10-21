@@ -12,6 +12,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.victron_vebus.const import (
     CONF_ENABLE_BATTERY_LIMITS,
     CONF_ENABLE_CONTROLS,
+    CONF_ENABLE_ESS_CONTROL,
     CONF_SCAN_INTERVAL,
     DOMAIN,
 )
@@ -21,7 +22,9 @@ from .vebus.simulator import FakeMK3
 PREFIX = "victron_ve_bus"
 
 
-def _entry(controls: bool = True, battery_limits: bool = False) -> MockConfigEntry:
+def _entry(
+    controls: bool = True, battery_limits: bool = False, ess: bool = True
+) -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         unique_id="HQ123",
@@ -30,6 +33,7 @@ def _entry(controls: bool = True, battery_limits: bool = False) -> MockConfigEnt
         options={
             CONF_ENABLE_CONTROLS: controls,
             CONF_ENABLE_BATTERY_LIMITS: battery_limits,
+            CONF_ENABLE_ESS_CONTROL: ess,
             CONF_SCAN_INTERVAL: 30,
         },
     )
@@ -178,6 +182,13 @@ async def test_battery_limits(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     sent = len(fake_mk3.device.bol_frames)
     await coordinator._async_periodic_writes()
     assert len(fake_mk3.device.bol_frames) == sent + 1
+    # Battery limits are critical changes (1.1.11).
+    await _call(
+        hass,
+        "switch",
+        "turn_on",
+        {"entity_id": f"switch.{PREFIX}_allow_critical_changes"},
+    )
     await _call(
         hass,
         "number",
