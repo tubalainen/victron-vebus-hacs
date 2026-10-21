@@ -92,6 +92,7 @@ was used where it agrees with the specification.
 | **1.1.6** | `D` reports the panel state last sent to the MK3, which is `04 00 00` after opening it: it counts only if its mode is the remote mode the device reports, and "off, 0 A" never counts. The remote limit number is unknown until a panel state is sent. A limit in effect above the stored setting 6 shows that ReadSetting reports EEPROM and that RAM differs; the number is then unknown with a lower bound (`active_minimum`). Mode changes keep the known remote limit. |
 | **1.1.7** | Returning to Winmon mode 1 (after a long-frame session and at start-up) sends the panel state read with `D` back to the MK3 (on, charger only or inverter only; flag 0x10 as before), so the MK3 keeps it. A poll no longer undoes a setting write or a refresh made while it ran. Setting ranges missing at start-up are read up to three times. |
 | **1.1.8** | Solar & wind priority entities are also created when the device reports no mask of supported bits for setting 60 but a range for setting 88 (the priority voltage), as the guided dialog already allowed. The ranges of settings 0 and 60 are re-read in long-frame mode at start-up. |
+| **1.1.9** | Clearing a flag bit no longer clears bit 15: `current & ~flag` inverted an `IntFlag`, which covers only its members' bits (since 0.2). Bits outside the mask of supported bits are never changed and are taken from the stored value when it is known, which also repairs a RAM value written by 1.1.8. |
 
 ## 5. Things to verify on real hardware
 
@@ -226,4 +227,15 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
   1.1.7 this hid the solar & wind priority entities while the dialog offered the
   feature; 1.1.8 uses the range of setting 88 instead and re-reads 0 and 60 in
   long-frame mode.
+- **Flags in RAM, 1.1.8:** with the long-frame re-read, settings 0 and 60 report the
+  masks 0x6FFC and 0x03FE. Solar & wind priority switched on in RAM during bulk
+  (38 A, 27.6 V, priority voltage 26 V) didn't stop the charge. PowerAssist switched
+  off in RAM with a 1.5 kW load and the remote limit at 6 A *did* take effect at
+  once: the minimum input current limit in the MasterMultiLED frame dropped from 3.6 A
+  to 0 A, mains current rose to 7.6 A, and RAM 14 stayed positive (no assist). So flag
+  changes in RAM apply without a restart, contrary to the PDF's warning. The limit in
+  effect was reported as 8.0 A (configured) with the remote limit at 6 A while
+  PowerAssist was off. The same write showed the bit 15 bug: setting 0 `0x81B0` was
+  written as `0x0190` instead of `0x8190`; the stored value was untouched (RAM-only
+  write).
 - Mode changes and the remote current limit work; link quality 100%.

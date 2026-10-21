@@ -1095,8 +1095,9 @@ class VeBusClient:
         RAM only unless ``persistent`` (see :meth:`write_setting`).
 
         Bits that the device reports as unsupported are refused (the maximum
-        of a flag setting is the mask of its supported bits). Returns the new
-        raw value.
+        of a flag setting is the mask of its supported bits) and never
+        changed: they keep the stored value if it is known, else the value
+        read. Returns the new raw value.
         """
         self._require_firmware(MIN_FIRMWARE_RAM_ONLY_WRITE, "Changing settings")
         if persistent:
@@ -1110,7 +1111,14 @@ class VeBusClient:
             current = await self._read_setting_locked(setting)
             if current is None:
                 raise VeBusNotSupportedError(f"Setting {setting} cannot be read")
-            new = current | flag if enabled else current & ~flag
+            # Plain integers: inverting an IntFlag only covers its own
+            # members' bits, which dropped bit 15 up to 1.1.8.
+            bits = int(flag)
+            new = current | bits if enabled else current & ~bits & 0xFFFF
+            mask = info.maximum if info is not None else None
+            stored = self.stored_raw.get(setting)
+            if mask is not None and stored is not None:
+                new = (new & mask) | (stored & ~mask & 0xFFFF)
             if new == current and not persistent:
                 self._store_setting(setting, current)
                 return current
