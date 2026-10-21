@@ -55,4 +55,5 @@ async def async_get_config_entry_diagnostics(
         },
         "state": asdict(client.state),
         "statistics": stats,
+        "last_write": client.last_write,
     }

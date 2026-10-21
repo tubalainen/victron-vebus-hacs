@@ -253,8 +253,12 @@ async def test_status_sensors(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     assert float(state(f"sensor.{PREFIX}_inverter_output_voltage")) == 230
     assert float(state(f"sensor.{PREFIX}_low_battery_shutdown_voltage")) == 22.0
     assert float(state(f"sensor.{PREFIX}_low_battery_restart_voltage")) == 24.0
-    assert state(f"sensor.{PREFIX}_charge_characteristic") == "fixed"
-    assert float(state(f"sensor.{PREFIX}_maximum_absorption_time")) == 1
+    assert state(f"sensor.{PREFIX}_charge_characteristic") == "fixed_storage"
+    # Setting 9 is scaled to minutes (8 x 60) and shown in hours.
+    absorption = hass.states.get(f"sensor.{PREFIX}_maximum_absorption_time")
+    assert absorption is not None
+    assert float(absorption.state) == 8
+    assert absorption.attributes["unit_of_measurement"] == "h"
     assert state(f"binary_sensor.{PREFIX}_virtual_switch") == "off"
 
 
@@ -304,3 +308,14 @@ async def test_led_binary_sensors_removed(
     await hass.async_block_till_done()
     assert registry.async_get(old) is None
     assert registry.async_get(f"sensor.{PREFIX}_mains_led") is not None
+
+
+async def test_charge_characteristic_fixed(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """Charge characteristic 1 is a fixed absorption time without storage."""
+    fake_mk3.device.settings[10] = 1
+    await _setup(hass, _entry())
+    state = hass.states.get(f"sensor.{PREFIX}_charge_characteristic")
+    assert state is not None
+    assert state.state == "fixed"

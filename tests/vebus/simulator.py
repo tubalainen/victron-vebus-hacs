@@ -43,8 +43,8 @@ MP2_SETTING_INFO_RAW: dict[int, tuple[int, int, int, int, int]] = {
     4: (1, 0, 70, 0, 70),
     5: (1, 0, 230, 210, 245),
     6: (0x10000 - 10, 0, 320, 10, 500),
-    9: (1, 0, 8, 1, 24),
-    10: (1, 0, 0, 0, 2),
+    9: (60, 0, 8, 1, 24),  # absorption time: scale 60 -> minutes
+    10: (1, 0, 3, 1, 3),  # charge characteristic (bit field)
     11: (0x10000 - 100, 0, 1860, 1600, 2600),
     12: (0x10000 - 100, 0, 140, 0, 600),
     49: (0x10000 - 10, 0, 160, 10, 500),  # Quattro only
@@ -106,8 +106,8 @@ class SimulatedMultiPlus:
             4: 70,
             5: 230,
             6: 160,
-            9: 1,
-            10: 1,  # fixed charge characteristic
+            9: 8,  # 480 minutes, as on a real MultiPlus-II
+            10: 3,  # fixed + storage, as on a real MultiPlus-II
             11: 2200,
             12: 200,
             60: 0x0210,  # solar & wind priority on
@@ -120,6 +120,10 @@ class SimulatedMultiPlus:
     # Cut mode 1 setting info replies after three records, as some devices do.
     truncate_setting_info: bool = False
     ack_writes: bool = True
+    # How RAM-only WriteViaID behaves: "ok" (RAM changes and reads back),
+    # "ignored" (acknowledged but nothing changes) or "readback_eeprom" (RAM
+    # changes, but ReadSetting returns the stored EEPROM value).
+    ram_only_mode: str = "ok"
     access_level_settings: set[int] = field(default_factory=set)
     # (flags, setting, value) of every WriteViaID.
     writes: list[tuple[int, int, int]] = field(default_factory=list)
@@ -305,6 +309,8 @@ class SimulatedMultiPlus:
             if setting not in self.settings:
                 return [0x80, 0x02, 0x00]
             self.writes.append((flags, setting, value))
+            if flags & 0x02 and self.ram_only_mode == "ignored":
+                return [0x88, 0x00, 0x00] if self.ack_writes else []
             self.settings[setting] = value
             if not flags & 0x02:  # not RAM only
                 self.eeprom[setting] = value
@@ -350,6 +356,8 @@ class SimulatedMultiPlus:
             setting = args[0] | args[1] << 8
             if setting not in self.settings:
                 return [0x91, 0, 0]
+            if self.ram_only_mode == "readback_eeprom" and setting in self.eeprom:
+                return [0x86, *_u16(self.eeprom[setting])]
             return [0x86, *_u16(self.settings[setting])]
         return [0x80, 0, 0]
 
