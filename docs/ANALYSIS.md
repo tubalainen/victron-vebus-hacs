@@ -91,6 +91,7 @@ was used where it agrees with the specification.
 | **1.1.5** | The Multi is the only source. Setting numbers show where the value comes from (`active_value_source`) and the stored value. What ReadSetting reports (RAM or EEPROM) is learnt from writes, never kept across connections. The configured AC input limit in effect is read from the MasterMultiLED frame while it is below the remote limit (`D`). *Save settings permanently* skips values equal to the stored ones. The remote limit number shows the `D` value. |
 | **1.1.6** | `D` reports the panel state last sent to the MK3, which is `04 00 00` after opening it: it counts only if its mode is the remote mode the device reports, and "off, 0 A" never counts. The remote limit number is unknown until a panel state is sent. A limit in effect above the stored setting 6 shows that ReadSetting reports EEPROM and that RAM differs; the number is then unknown with a lower bound (`active_minimum`). Mode changes keep the known remote limit. |
 | **1.1.7** | Returning to Winmon mode 1 (after a long-frame session and at start-up) sends the panel state read with `D` back to the MK3 (on, charger only or inverter only; flag 0x10 as before), so the MK3 keeps it. A poll no longer undoes a setting write or a refresh made while it ran. Setting ranges missing at start-up are read up to three times. |
+| **1.1.8** | Solar & wind priority entities are also created when the device reports no mask of supported bits for setting 60 but a range for setting 88 (the priority voltage), as the guided dialog already allowed. The ranges of settings 0 and 60 are re-read in long-frame mode at start-up. |
 
 ## 5. Things to verify on real hardware
 
@@ -221,5 +222,8 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
   storage", and xcellsior saw 1 for "fixed": read as a bit field (bit 0 fixed, bit 1
   storage). 0 (adaptive) and 2 (adaptive + storage) are inferred.
 - **Settings 0 and 60** report no maximum in Winmon mode 1 (truncated setting info),
-  so the supported-bit mask of the flag settings is unknown on this device.
+  so the supported-bit mask of the flag settings is unknown on this device. Up to
+  1.1.7 this hid the solar & wind priority entities while the dialog offered the
+  feature; 1.1.8 uses the range of setting 88 instead and re-reads 0 and 60 in
+  long-frame mode.
 - Mode changes and the remote current limit work; link quality 100%.

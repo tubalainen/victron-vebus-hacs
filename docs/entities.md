@@ -28,7 +28,7 @@ settings.
 | Firmware version, MK3 interface version | Diagnostic. |
 | Mains / Absorption / Bulk / Float / Inverter / Overload / Low battery / Temperature LED | Diagnostic: the front panel LEDs, each off, on or blinking. |
 | Keep awake (switch) | See [Keep awake](connection.md#keep-awake). |
-| Solar & wind priority voltage | Diagnostic. Only on firmware 506+ with the feature configured. |
+| Solar & wind priority voltage | Diagnostic. Only on firmware 506+, and the Multi has the bit set, lists it as supported, or (when it reports no list of supported bits) reports a range for the priority voltage. |
 | Configured AC input 2 current limit | Diagnostic. Only on devices with a second AC input (Quattro). |
 | AC input / output apparent power L1–L3 | Multi-phase systems only. Voltage × current per phase, from the info frames. |
 | *Unit N* AC input/output voltage, current and power; battery voltage, current and power; device state; energy (as for the system) | Multi-unit systems only, one device per unit (*Victron VE.Bus unit N*). Units are read in turn, one per poll. |
@@ -44,7 +44,7 @@ settings.
 | Mode (select), Stop grid charging (0 A), PowerAssist, Weak AC input, UPS function (switches), Absorption / Float voltage (numbers) | *Monitor and control*; critical. Settings need firmware 412+ and change RAM only. See [Modes and Stop grid charging compared](controls.md#modes-and-stop-grid-charging-compared). |
 | Start equalisation, Restart the Multi, Save settings permanently (buttons) | *Monitor and control*; critical. Equalisation needs firmware 400+, saving 412+. |
 | Unsaved setting changes | Diagnostic, *Monitor and control*. The number of settings changed in RAM only, listed in the `settings` attribute. |
-| Solar & wind priority (switch), Solar & wind priority voltage (number) | *Monitor and control*; firmware 506+ and the feature configured. RAM only. |
+| Solar & wind priority (switch), Solar & wind priority voltage (number) | *Monitor and control*; firmware 506+, and the Multi has the bit set, lists it as supported, or (when it reports no list of supported bits) reports a range for the priority voltage. RAM only. |
 
 ## Multi-unit, Quattro and Compact devices
 

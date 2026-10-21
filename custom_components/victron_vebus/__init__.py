@@ -56,6 +56,9 @@ REMOVED_ENTITIES: tuple[tuple[str, str], ...] = (
 )
 # Settings that control entities may change; their ranges are needed up front.
 WRITABLE_SETTINGS = (
+    # Flag settings: their maximum is the mask of supported bits.
+    Setting.FLAGS_0,
+    Setting.FLAGS_2,
     Setting.U_BAT_ABSORPTION,
     Setting.U_BAT_FLOAT,
     Setting.I_BAT_BULK,

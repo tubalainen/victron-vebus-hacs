@@ -125,6 +125,11 @@ class SimulatedMultiPlus:
     long_frames: bool = False
     # Cut mode 1 setting info replies after three records, as some devices do.
     truncate_setting_info: bool = False
+    # Settings whose info never includes the range (in mode 1 cut short, in
+    # mode 2 unanswered), as settings 0 and 60 on a MultiPlus-II (fw 556).
+    no_range_settings: set[int] = field(default_factory=set)
+    # Settings the device has no info for.
+    missing_setting_info: set[int] = field(default_factory=set)
     ack_writes: bool = True
     # How RAM-only WriteViaID behaves: "ok" (RAM changes and reads back),
     # "ignored" (acknowledged but nothing changes) or "readback_eeprom" (RAM
@@ -353,11 +358,17 @@ class SimulatedMultiPlus:
             return [0x8E, *_u16(scale), 0x8F, *_u16(offset)]
         if cmd == 0x35:
             setting = args[0] | args[1] << 8
-            if setting not in MP2_SETTING_INFO_RAW or (
-                setting == 49 and not self.quattro
+            if (
+                setting not in MP2_SETTING_INFO_RAW
+                or setting in self.missing_setting_info
+                or (setting == 49 and not self.quattro)
             ):
                 return [0x91, 0, 0]
             sc, off, default, minimum, maximum = MP2_SETTING_INFO_RAW[setting]
+            if setting in self.no_range_settings:
+                if self.long_frames:
+                    return []  # no reply
+                return [0x89, *_u16(sc), 0x8A, *_u16(off), 0x8B, *_u16(default)]
             if self.long_frames:
                 return [
                     0x89, *_u16(sc), *_u16(off), *_u16(default),
