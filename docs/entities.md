@@ -14,7 +14,7 @@ settings.
 | Battery voltage, current, power | Positive means charging. |
 | Charger current, Inverter DC current | DC side, from the DC info frame. |
 | State of charge | Only created if a battery capacity is configured in the device. |
-| Battery temperature | °C, from RAM variable 21 (since 1.1.13). Only created if the Multi describes that variable. Not documented by Victron (VictronConnect names it "Battery temperature"); compare it once with VictronConnect. Needs a temperature sensor on the Multi. |
+| Battery temperature | °C, from RAM variable 21 (since 1.1.13), in steps of 0.5 °C. Only created if the Multi describes that variable. Not documented by Victron (VictronConnect names it "Battery temperature"); on a MultiPlus-II with firmware 556 it matches VictronConnect. Needs a temperature sensor on the Multi. |
 | Device state | down, startup, off, slave, invert_full/half/aes, power_assist, bypass (passthru), charge |
 | Charge state | not_charging, init, bulk, absorption, float, storage, repeated/forced absorption, equalise, bulk_stopped |
 | Mode, Front switch | The mode in effect and the physical switch position. |

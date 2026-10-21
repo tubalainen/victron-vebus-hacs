@@ -62,7 +62,7 @@ async def test_battery_temperature(hass: HomeAssistant, fake_mk3: FakeMK3) -> No
     sensor = f"sensor.{PREFIX}_battery_temperature"
     assert _state(hass, sensor) == "21.5"
     assert hass.states.get(sensor).attributes["unit_of_measurement"] == "°C"
-    fake_mk3.device.ram[21] = (-550) & 0xFFFF
+    fake_mk3.device.ram[21] = 535  # half kelvin
     await _refresh(hass, coordinator)
     assert _state(hass, sensor) == "-5.5"
 

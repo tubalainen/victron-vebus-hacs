@@ -252,4 +252,10 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
     (earlier readings: remote 9 / configured 7 → 7; remote 10 / configured 8 → 8).
     The rule "limit in effect = the lower of remote and configured" therefore doesn't
     always hold; 1.1.10 stops deriving the configured limit from it.
+- **1.1.13:** RAM 21 is the battery temperature. The MultiPlus-II (firmware 556,
+  temperature sensor connected) describes it with scale 0.5 and offset −546: the raw
+  value is in half kelvin (546 × 0.5 = 273). It read 21.5 °C, the same as
+  VictronConnect. RAM 10 (virtual switch) is not supported; with it left out of the
+  request, RAM 11 (ignore AC input) reads 0 and RAM 12 (relay) 1. The `L` reply is
+  `03 00 00 00 80 00`: alarm byte 0, status byte 0 (no VE.Bus error, no block mode).
 - Mode changes and the remote current limit work; link quality 100%.
