@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components.number import (
     NumberDeviceClass,
@@ -222,6 +223,17 @@ class VeBusSettingNumber(VeBusEntity, NumberEntity):
     def native_value(self) -> float | None:
         """Return the value currently in effect."""
         return self.coordinator.data.setting_value(self.entity_description.setting)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the stored value while a different RAM value is in effect."""
+        setting = self.entity_description.setting
+        client = self.coordinator.client
+        raw = client.stored_raw.get(setting)
+        info = client.setting_info.get(setting)
+        if raw is None or info is None:
+            return None
+        return {"stored_value": info.decode(raw)}
 
     async def async_set_native_value(self, value: float) -> None:
         """Write the setting to the device's RAM."""

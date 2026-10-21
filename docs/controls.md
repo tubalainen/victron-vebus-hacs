@@ -168,20 +168,14 @@ device restarts, which then goes back to the configuration made with VictronConn
 or VEConfigure. Because nothing is written to the EEPROM, automations can change these
 settings as often as needed without wearing it out.
 
-> [!WARNING]
-> **Known issue (1.1.x):** on at least one MultiPlus-II (firmware 556), every RAM-only
-> setting change fails with *"Setting N reads back … after writing …"*: the Multi
-> answers the read-back with the old value. Either it reports the stored (EEPROM) value
-> there, or it ignores RAM-only changes. This is being investigated: after a failed
-> change, the integration's **diagnostics download** contains a `last_write` section
-> with the Multi's exact reply. Please attach it to an issue.
->
-> **Workaround:** store the setting permanently, either with the guided dialog
-> (*Configure → Device actions → Change a charger setting*, *Store permanently* on) or
-> with the `set_setting` action and `persistent: true`. This writes RAM and EEPROM like
-> VEConfigure does. Remember the EEPROM's limited write cycles: at most once per setting
-> every 5 minutes, and don't automate it. *Save settings permanently* doesn't help here,
-> because it only stores RAM changes that succeeded.
+> [!NOTE]
+> Some devices, for example a MultiPlus-II with firmware 556, apply a RAM-only change
+> but keep reporting the **stored** value when it is read. Since 1.1.4 the integration
+> accepts such a change when the Multi acknowledges it (reply 0x88). The number then
+> shows the value in effect, and its **Stored value** attribute shows what the Multi
+> will return to after a restart. *Save settings permanently* stores the value in
+> effect. Up to 1.1.3 these changes failed with *"Setting N reads back … after
+> writing …"*; set them again after updating.
 
 How a change is made:
 
@@ -189,7 +183,10 @@ How a change is made:
   interface to long frames for the write and straight back to short frames afterwards.
   This is the same sequence VEConfigure uses, and polling pauses for that moment.
 - Every write is read back. If the device reports a different value, the action fails
-  with an error.
+  with an error, unless the Multi acknowledged a RAM-only write (see the note above).
+  The integration can't tell such a device from one that acknowledges a change and
+  ignores it; none of the latter is known. The diagnostics download shows the last
+  write in `last_write` and the RAM values in effect in `ram_values`.
 - Values are limited to the range the device reports for each setting. The float
   voltage can't be set above the absorption voltage, nor the absorption voltage below
   the float voltage. The solar & wind priority voltage can't be set above the

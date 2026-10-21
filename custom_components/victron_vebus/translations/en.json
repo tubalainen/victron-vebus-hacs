@@ -594,16 +594,36 @@
         "name": "Remote AC input current limit"
       },
       "charge_current_limit": {
-        "name": "Charge current limit"
+        "name": "Charge current limit",
+        "state_attributes": {
+          "stored_value": {
+            "name": "Stored value"
+          }
+        }
       },
       "configured_ac_input_current_limit": {
-        "name": "Configured AC input current limit"
+        "name": "Configured AC input current limit",
+        "state_attributes": {
+          "stored_value": {
+            "name": "Stored value"
+          }
+        }
       },
       "solar_wind_priority_voltage": {
-        "name": "Solar & wind priority voltage"
+        "name": "Solar & wind priority voltage",
+        "state_attributes": {
+          "stored_value": {
+            "name": "Stored value"
+          }
+        }
       },
       "configured_ac_input_2_current_limit": {
-        "name": "Configured AC input 2 current limit"
+        "name": "Configured AC input 2 current limit",
+        "state_attributes": {
+          "stored_value": {
+            "name": "Stored value"
+          }
+        }
       },
       "ess_grid_setpoint": {
         "name": "ESS grid setpoint"
@@ -624,10 +644,20 @@
         "name": "Battery limit discharge current"
       },
       "absorption_voltage": {
-        "name": "Absorption voltage"
+        "name": "Absorption voltage",
+        "state_attributes": {
+          "stored_value": {
+            "name": "Stored value"
+          }
+        }
       },
       "float_voltage": {
-        "name": "Float voltage"
+        "name": "Float voltage",
+        "state_attributes": {
+          "stored_value": {
+            "name": "Stored value"
+          }
+        }
       }
     },
     "button": {
