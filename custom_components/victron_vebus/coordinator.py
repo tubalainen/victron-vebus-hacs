@@ -159,8 +159,10 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
     def supports_solar_wind_priority(self) -> bool:
         """Return True if the device has solar & wind priority configured.
 
-        The feature needs firmware 506. It is only offered when the device
-        lists the bit as supported or has it set.
+        The feature needs firmware 506. It is offered when the device lists
+        the bit as supported or has it set. If the device doesn't report the
+        mask of supported bits (seen on a MultiPlus-II, firmware 556), it is
+        offered when the device reports a range for the priority voltage.
         """
         if not self.firmware_at_least(MIN_FIRMWARE_SOLAR_WIND_PRIORITY):
             return False
@@ -170,7 +172,11 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         info = self.client.setting_info.get(Setting.FLAGS_2)
         mask = info.maximum if info is not None else None
         flag = SettingFlag.SOLAR_WIND_PRIORITY
-        return bool(raw & flag) or (mask is not None and bool(mask & flag))
+        if raw & flag:
+            return True
+        if mask is not None:
+            return bool(mask & flag)
+        return self.can_write_setting(Setting.SOLAR_WIND_PRIORITY_VOLTAGE)
 
     @callback
     def async_start(self) -> None:

@@ -127,6 +127,33 @@ async def test_solar_wind_priority(hass: HomeAssistant, fake_mk3: FakeMK3) -> No
     assert fake_mk3.device.settings[88] == 2720
 
 
+async def test_solar_wind_priority_without_mask(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """Without the mask of supported bits, the priority voltage decides (1.1.8).
+
+    As on a MultiPlus-II (firmware 556): priority off, settings 0 and 60 have
+    no range, setting 88 has one.
+    """
+    fake_mk3.device.settings[60] = 0x0010
+    fake_mk3.device.no_range_settings = {0, 60}
+    await _setup(hass, _entry())
+    assert _state(hass, f"switch.{PREFIX}_solar_wind_priority") == "off"
+    assert _state(hass, f"number.{PREFIX}_solar_wind_priority_voltage") == "27.6"
+
+
+async def test_no_solar_wind_priority_without_its_voltage(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """Without mask, flag or priority voltage, nothing is offered."""
+    fake_mk3.device.settings[60] = 0x0010
+    fake_mk3.device.no_range_settings = {0, 60}
+    fake_mk3.device.missing_setting_info = {88}
+    await _setup(hass, _entry())
+    assert hass.states.get(f"switch.{PREFIX}_solar_wind_priority") is None
+    assert hass.states.get(f"number.{PREFIX}_solar_wind_priority_voltage") is None
+
+
 async def test_old_firmware_hides_writes(
     hass: HomeAssistant, fake_mk3: FakeMK3
 ) -> None:
