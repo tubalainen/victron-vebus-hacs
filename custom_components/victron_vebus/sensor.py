@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from decimal import Decimal
+import functools
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -38,7 +39,7 @@ from .const import (
 )
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
 from .energy import EnergyCounter
-from .entity import VeBusEntity
+from .entity import VeBusEntity, async_add_when_ready
 from .vebus import (
     AlarmState,
     ChargeState,
@@ -806,14 +807,23 @@ async def async_setup_entry(
 ) -> None:
     """Set up VE.Bus sensors."""
     coordinator = entry.runtime_data.coordinator
-    entities: list[SensorEntity] = [
-        VeBusSensor(coordinator, description)
-        for description in DEVICE_SENSORS
-        if description.exists_fn(coordinator)
-    ]
-    entities.extend(
-        VeBusEnergySensor(coordinator, description) for description in ENERGY_SENSORS
+    # Some sensors (solar & wind priority) depend on setting ranges that may
+    # be read later.
+    async_add_when_ready(
+        coordinator,
+        async_add_entities,
+        [
+            (
+                description.key,
+                functools.partial(description.exists_fn, coordinator),
+                functools.partial(VeBusSensor, coordinator, description),
+            )
+            for description in DEVICE_SENSORS
+        ],
     )
+    entities: list[SensorEntity] = [
+        VeBusEnergySensor(coordinator, description) for description in ENERGY_SENSORS
+    ]
     entities.extend(
         VeBusLinkSensor(coordinator, description) for description in LINK_SENSORS
     )

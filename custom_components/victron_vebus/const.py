@@ -68,3 +68,10 @@ ATTR_VALUE: Final = "value"
 ATTR_FEATURE: Final = "feature"
 ATTR_ENABLED: Final = "enabled"
 ATTR_PERSISTENT: Final = "persistent"
+
+# Sent when setting ranges read after start-up allow more entities.
+SIGNAL_RANGES: Final = "victron_vebus_ranges_{}"
+# Missing setting ranges are read again after this many seconds, then at
+# RANGES_RETRY_INTERVAL.
+RANGES_FIRST_RETRY: Final = 60
+RANGES_RETRY_INTERVAL: Final = 300

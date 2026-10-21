@@ -255,10 +255,10 @@ async def test_ram_value_shown_over_stored_read_back(
     assert state.attributes["stored_value"] == 39.0
 
 
-async def test_input_limit_read_from_the_multi(
+async def test_configured_and_remote_limits(
     hass: HomeAssistant, fake_mk3: FakeMK3
 ) -> None:
-    """The configured limit in effect is read below the remote limit (1.1.5)."""
+    """The configured limit shows what the Multi acknowledged (1.1.10)."""
     _, coordinator = await _setup(hass)
     fake_mk3.device.ram_only_mode = "readback_eeprom"
     fake_mk3.device.limit_follows_setting = True
@@ -271,7 +271,7 @@ async def test_input_limit_read_from_the_multi(
     await coordinator.async_refresh()
     state = hass.states.get(configured)
     assert state.state == "7.0"
-    assert state.attributes["active_value_source"] == "read"
+    assert state.attributes["active_value_source"] == "acknowledged"
     assert state.attributes["stored_value"] == 16.0
     # The remote panel limit is what the interface reports, not the 7 A
     # in effect.
@@ -428,3 +428,22 @@ async def test_renamed_switch_keeps_entity_id(
         state.attributes["friendly_name"] == "Victron VE.Bus Stop grid charging (0 A)"
     )
     assert hass.states.get(f"switch.{PREFIX}_stop_grid_charging_0_a") is None
+
+
+async def test_numbers_added_once_ranges_are_read(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """A setting whose range is missing at start-up gets its number later."""
+    fake_mk3.device.no_range_settings = {2}
+    _, coordinator = await _setup(hass)
+    absorption = f"number.{PREFIX}_absorption_voltage"
+    assert hass.states.get(absorption) is None
+    assert coordinator.client.missing_ranges([2]) == [2]
+
+    # The device answers again; the background retry reads the range.
+    fake_mk3.device.no_range_settings = set()
+    coordinator._ranges_retry_at = 0
+    await coordinator._async_retry_ranges()
+    await hass.async_block_till_done()
+    assert _state(hass, absorption) == "28.8"
+    assert coordinator.client.missing_ranges([2]) == []

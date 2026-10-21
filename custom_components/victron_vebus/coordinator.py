@@ -13,6 +13,7 @@ from homeassistant.const import Platform
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -20,6 +21,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_ALARM_ISSUES,
     CONF_ENABLE_BATTERY_LIMITS,
+    CONF_ENABLE_CONTROLS,
     CONF_SCAN_INTERVAL,
     CRITICAL_UNLOCK_DURATION,
     DEFAULT_SCAN_INTERVAL,
@@ -29,6 +31,9 @@ from .const import (
     LINK_ISSUE_CLEAR,
     LINK_ISSUE_MIN_REQUESTS,
     LINK_QUALITY_WINDOW,
+    RANGES_FIRST_RETRY,
+    RANGES_RETRY_INTERVAL,
+    SIGNAL_RANGES,
     UNAVAILABLE_ISSUE_DELAY,
 )
 from .health import LinkQuality
@@ -49,6 +54,19 @@ from .vebus.const import (
     MIN_FIRMWARE_SOLAR_WIND_PRIORITY,
 )
 from .vebus.models import BatteryLimits
+
+# Settings that control entities may change; their ranges are needed.
+WRITABLE_SETTINGS = (
+    # Flag settings: their maximum is the mask of supported bits.
+    Setting.FLAGS_0,
+    Setting.FLAGS_2,
+    Setting.U_BAT_ABSORPTION,
+    Setting.U_BAT_FLOAT,
+    Setting.I_BAT_BULK,
+    Setting.I_MAINS_LIMIT_AC1,
+    Setting.I_MAINS_LIMIT_AC2,
+    Setting.SOLAR_WIND_PRIORITY_VOLTAGE,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,6 +130,8 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         # Battery Operational Limits, sent on every poll once set.
         self.battery_limits: BatteryLimits | None = None
         self._battery_limits_timeout_logged = False
+        # Setting ranges missing after start-up are read again from here.
+        self._ranges_retry_at = time.monotonic() + RANGES_FIRST_RETRY
         self._unavailable_since: float | None = None
         # Last known level of each alarm, and who wants to hear of changes.
         self.alarms: dict[str, AlarmState] = {}
@@ -206,7 +226,11 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         )
 
     async def _async_periodic_writes(self) -> None:
-        """Refresh the ESS setpoints and battery limits before every poll."""
+        """Refresh the ESS setpoints and battery limits before every poll.
+
+        Also reads setting ranges that are still missing, every few minutes.
+        """
+        await self._async_retry_ranges()
         if self.ess_control:
             await self._async_write_ess_setpoints()
         if self.battery_limits is not None and self.battery_limits_enabled:
@@ -214,6 +238,25 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
             if reply.timeout and not self._battery_limits_timeout_logged:
                 _LOGGER.warning("The device reports missing battery limit information")
                 self._battery_limits_timeout_logged = True
+
+    async def _async_retry_ranges(self) -> None:
+        """Read missing setting ranges and announce the entities they allow."""
+        if not self.config_entry.options.get(CONF_ENABLE_CONTROLS, False):
+            return
+        now = time.monotonic()
+        if now < self._ranges_retry_at:
+            return
+        self._ranges_retry_at = now + RANGES_RETRY_INTERVAL
+        if not self.client.missing_ranges(WRITABLE_SETTINGS):
+            return
+        completed = await self.client.complete_setting_info(
+            WRITABLE_SETTINGS, warn=False
+        )
+        if completed:
+            _LOGGER.info("Read the range of settings %s", completed)
+            async_dispatcher_send(
+                self.hass, SIGNAL_RANGES.format(self.config_entry.entry_id)
+            )
 
     async def _async_write_ess_setpoints(self, *, force: bool = False) -> None:
         now = time.monotonic()

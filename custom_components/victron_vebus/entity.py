@@ -2,16 +2,51 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable, Sequence
 
+from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity import EntityDescription
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import Entity, EntityDescription
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER
+from .const import DOMAIN, MANUFACTURER, SIGNAL_RANGES
 from .coordinator import VeBusCoordinator
 from .vebus import VeBusError, VeBusNotSupportedError
+
+
+@callback
+def async_add_when_ready(
+    coordinator: VeBusCoordinator,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+    candidates: Sequence[tuple[str, Callable[[], bool], Callable[[], Entity]]],
+) -> None:
+    """Add entities now, or once the setting ranges they need are read.
+
+    Each candidate is (key, ready, create). Candidates that aren't ready are
+    checked again whenever more setting ranges become known (SIGNAL_RANGES).
+    """
+    added: set[str] = set()
+
+    @callback
+    def _add() -> None:
+        new: list[Entity] = []
+        for key, ready, create in candidates:
+            if key not in added and ready():
+                added.add(key)
+                new.append(create())
+        if new:
+            async_add_entities(new)
+
+    _add()
+    entry = coordinator.config_entry
+    entry.async_on_unload(
+        async_dispatcher_connect(
+            coordinator.hass, SIGNAL_RANGES.format(entry.entry_id), _add
+        )
+    )
 
 
 def device_identifier(coordinator: VeBusCoordinator) -> str:

@@ -59,6 +59,4 @@ async def async_get_config_entry_diagnostics(
         "readsetting_reports": client.readsetting_reports,
         "ram_values": {str(k): v for k, v in client.ram_values.items()},
         "stored_raw": {str(k): v for k, v in client.stored_raw.items()},
-        "active_read": {str(k): v for k, v in client.active_read.items()},
-        "active_minimum": {str(k): v for k, v in client.active_minimum.items()},
     }

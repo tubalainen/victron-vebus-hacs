@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import functools
 from typing import Any
 
 from homeassistant.components.number import (
@@ -31,7 +32,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import actions
 from .const import DOMAIN, ESS_SETPOINT_LIMIT
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
-from .entity import VeBusEntity
+from .entity import VeBusEntity, async_add_when_ready
 from .vebus import Mode, Setting, VeBusError
 from .vebus.models import BatteryLimits, ConfigInfo, VeBusState
 
@@ -130,11 +131,18 @@ async def async_setup_entry(
     """Set up the numbers (only when controls are enabled)."""
     coordinator = entry.runtime_data.coordinator
     entities: list[NumberEntity] = [VeBusCurrentLimitNumber(coordinator, CURRENT_LIMIT)]
-    entities.extend(
-        VeBusSettingNumber(coordinator, description)
-        for description in SETTING_NUMBERS
-        if coordinator.can_write_setting(description.setting)
-        and description.exists_fn(coordinator)
+    # Setting numbers need the setting's range, which may be read later.
+    async_add_when_ready(
+        coordinator,
+        async_add_entities,
+        [
+            (
+                description.key,
+                functools.partial(_setting_number_ready, coordinator, description),
+                functools.partial(VeBusSettingNumber, coordinator, description),
+            )
+            for description in SETTING_NUMBERS
+        ],
     )
     ess_addresses = sorted(coordinator.client.ess_records)
     for address in ess_addresses:
@@ -148,6 +156,14 @@ async def async_setup_entry(
             for description in BATTERY_LIMIT_NUMBERS
         )
     async_add_entities(entities)
+
+
+def _setting_number_ready(
+    coordinator: VeBusCoordinator, description: VeBusSettingNumberEntityDescription
+) -> bool:
+    return coordinator.can_write_setting(description.setting) and description.exists_fn(
+        coordinator
+    )
 
 
 class VeBusCurrentLimitNumber(VeBusEntity, NumberEntity):
@@ -243,9 +259,6 @@ class VeBusSettingNumber(VeBusEntity, NumberEntity):
         raw = client.stored_raw.get(setting)
         if raw is not None:
             attributes["stored_value"] = info.decode(raw)
-        minimum = client.active_minimum.get(setting)
-        if attributes["active_value_source"] == "at_least" and minimum is not None:
-            attributes["active_value_at_least"] = info.decode(minimum)
         return attributes
 
     async def async_set_native_value(self, value: float) -> None:

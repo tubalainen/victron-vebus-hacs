@@ -130,6 +130,9 @@ class SimulatedMultiPlus:
     no_range_settings: set[int] = field(default_factory=set)
     # Settings the device has no info for.
     missing_setting_info: set[int] = field(default_factory=set)
+    # Long-form setting info requests answered with a reply meant for another
+    # request (a ReadSetting reply), as a late reply would be.
+    stray_setting_info_replies: int = 0
     ack_writes: bool = True
     # How RAM-only WriteViaID behaves: "ok" (RAM changes and reads back),
     # "ignored" (acknowledged but nothing changes) or "readback_eeprom" (RAM
@@ -365,6 +368,9 @@ class SimulatedMultiPlus:
             ):
                 return [0x91, 0, 0]
             sc, off, default, minimum, maximum = MP2_SETTING_INFO_RAW[setting]
+            if self.long_frames and self.stray_setting_info_replies:
+                self.stray_setting_info_replies -= 1
+                return [0x86, 0x00, 0x00]
             if setting in self.no_range_settings:
                 if self.long_frames:
                     return []  # no reply
