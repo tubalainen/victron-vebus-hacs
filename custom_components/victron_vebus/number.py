@@ -167,9 +167,15 @@ class VeBusCurrentLimitNumber(VeBusEntity, NumberEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return the current limit in effect."""
+        """Return the limit the interface reports for the remote panel.
+
+        Falls back to the limit in effect if the interface doesn't report it.
+        """
         config = self._config
-        return config.actual_current_limit if config else None
+        if config is None:
+            return None
+        remote = self.coordinator.data.remote_current_limit
+        return remote if remote is not None else config.actual_current_limit
 
     @property
     def native_min_value(self) -> float:
@@ -225,15 +231,18 @@ class VeBusSettingNumber(VeBusEntity, NumberEntity):
         return self.coordinator.data.setting_value(self.entity_description.setting)
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return the stored value while a different RAM value is in effect."""
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return where the value comes from, and the stored value if known."""
         setting = self.entity_description.setting
         client = self.coordinator.client
+        attributes: dict[str, Any] = {
+            "active_value_source": client.active_value_source(setting)
+        }
         raw = client.stored_raw.get(setting)
         info = client.setting_info.get(setting)
-        if raw is None or info is None:
-            return None
-        return {"stored_value": info.decode(raw)}
+        if raw is not None and info is not None:
+            attributes["stored_value"] = info.decode(raw)
+        return attributes
 
     async def async_set_native_value(self, value: float) -> None:
         """Write the setting to the device's RAM."""

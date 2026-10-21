@@ -88,6 +88,7 @@ was used where it agrees with the specification.
 | **1.1.2** | Texts only: the *Passthru* switch and dialog are renamed *Stop grid charging (0 A)*, because "passthru" was mistaken for normal operation (the device state shows Victron's normal grid-through state as passthru). Keys, actions and existing entity IDs are unchanged. |
 | **1.1.3** | Every setting write is recorded (WriteViaID reply, read back, the frames of the long-frame session) in `last_write` of the diagnostics, and a failed verification names the reply. Maximum absorption time is read in minutes (setting 9 has scale 60). The charge characteristic (setting 10) is read as a bit field. |
 | **1.1.4** | RAM-only writes acknowledged with 0x88 are accepted when ReadSetting reports the stored value. The value written is kept (`ram_values`) and used for polling, flag changes and *Save settings permanently* until a restart or save; the number entities show the stored value as an attribute. |
+| **1.1.5** | The Multi is the only source. Setting numbers show where the value comes from (`active_value_source`) and the stored value. What ReadSetting reports (RAM or EEPROM) is learnt from writes, never kept across connections. The configured AC input limit in effect is read from the MasterMultiLED frame while it is below the remote limit (`D`). *Save settings permanently* skips values equal to the stored ones. The remote limit number shows the `D` value. |
 
 ## 5. Things to verify on real hardware
 
@@ -188,6 +189,12 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
   the charge current limit at 5 A the charger dropped to about 6 A. So on this
   firmware ReadSetting returns the EEPROM value, not the RAM value. 1.1.4 trusts the
   0x88 reply.
+- **Input current limit, 1.1.4:** with the remote panel limit at 9.0 A (`D` reply
+  `03 5a 00`) and setting 6 written to 7.0 A in RAM (stored 6.0 A), the MasterMultiLED
+  frame reports 7.0 A in effect (min 3.6, max 32.0, "overruled by remote" off). Earlier
+  diagnostics show 8.0 A in effect after writing 8 A. So the limit in effect is the
+  lower of the remote and the RAM configured limit; below the remote limit it reads the
+  RAM value of setting 6. 1.1.5 uses this.
 - **Setting 9** (absorption time) reports scale 60: the value is in minutes (8 → 480).
 - **Setting 10** (charge characteristic) is 3 with VictronConnect showing "Fixed +
   storage", and xcellsior saw 1 for "fixed": read as a bit field (bit 0 fixed, bit 1

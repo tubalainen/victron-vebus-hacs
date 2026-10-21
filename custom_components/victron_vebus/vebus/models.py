@@ -309,6 +309,8 @@ class VeBusState:
     ac: dict[int, AcInfo] = field(default_factory=dict)
     leds: LedInfo | None = None
     config: ConfigInfo | None = None
+    # Input current limit requested through the remote panel ('D').
+    remote_current_limit: float | None = None
     device_state: DeviceStateInfo | None = None
     ram: dict[int, float | None] = field(default_factory=dict)
     settings: dict[int, float | None] = field(default_factory=dict)

@@ -168,14 +168,36 @@ device restarts, which then goes back to the configuration made with VictronConn
 or VEConfigure. Because nothing is written to the EEPROM, automations can change these
 settings as often as needed without wearing it out.
 
-> [!NOTE]
-> Some devices, for example a MultiPlus-II with firmware 556, apply a RAM-only change
-> but keep reporting the **stored** value when it is read. Since 1.1.4 the integration
-> accepts such a change when the Multi acknowledges it (reply 0x88). The number then
-> shows the value in effect, and its **Stored value** attribute shows what the Multi
-> will return to after a restart. *Save settings permanently* stores the value in
-> effect. Up to 1.1.3 these changes failed with *"Setting N reads back … after
-> writing …"*; set them again after updating.
+### RAM and EEPROM: the Multi is the source
+
+The Multi keeps every setting twice: in **RAM** (the value in effect) and in the
+**EEPROM** (the stored value it returns to after a restart). The integration shows only
+what the Multi reports and keeps nothing of its own: after a restart of Home Assistant
+everything is read from the Multi again.
+
+Not every Multi reports both. A MultiPlus-II with firmware 556 reports the **stored**
+value when a setting is read, while a RAM-only change does apply. Each setting number
+therefore has two attributes:
+
+| Attribute | Meaning |
+|---|---|
+| **Active value source** | *Read from the Multi (RAM)*: the Multi reports the value in effect. *Change acknowledged by the Multi*: the Multi confirmed a RAM-only change (reply 0x88) that it doesn't show when read; the value it confirmed is shown. *Stored value (RAM can't be read)*: no change was made since Home Assistant started, so the stored value is shown. *Read from the Multi (RAM or stored not known yet)*: no change has shown yet which of the two the Multi reports. |
+| **Stored value** | The EEPROM value, when the Multi is known to report it. |
+
+The **configured AC input current limit** in effect is read from the Multi even when
+the setting itself reports the stored value. The limit in effect is the lower of the
+remote and the configured limit, so while it is below the remote limit it is the
+configured limit (verified on a MultiPlus-II: remote 9 A and configured 7 A in RAM give
+7 A). At or above the remote limit, the integration falls back to the other sources.
+It doesn't do this when *AC input overruled by remote* is enabled, or while the second
+input of a Quattro is active. The **Remote AC input current limit** number shows the
+limit the MK3 reports for the remote panel, not the limit in effect; that is the
+*AC input current limit* sensor.
+
+*Save settings permanently* writes only values the Multi acknowledged and that differ
+from the stored value, so the EEPROM isn't written for nothing. A permanent write
+(WriteViaID, one setting at a time) doesn't restart the Multi. VEConfigure restarts it
+because it sends the whole configuration.
 
 How a change is made:
 
@@ -183,10 +205,11 @@ How a change is made:
   interface to long frames for the write and straight back to short frames afterwards.
   This is the same sequence VEConfigure uses, and polling pauses for that moment.
 - Every write is read back. If the device reports a different value, the action fails
-  with an error, unless the Multi acknowledged a RAM-only write (see the note above).
-  The integration can't tell such a device from one that acknowledges a change and
-  ignores it; none of the latter is known. The diagnostics download shows the last
-  write in `last_write` and the RAM values in effect in `ram_values`.
+  with an error, unless the Multi acknowledged a RAM-only write (see above). The
+  integration can't tell such a device from one that acknowledges a change and ignores
+  it; none of the latter is known. The diagnostics download shows the last write in
+  `last_write`, what ReadSetting reports in `readsetting_reports`, and the acknowledged
+  RAM values in `ram_values`.
 - Values are limited to the range the device reports for each setting. The float
   voltage can't be set above the absorption voltage, nor the absorption voltage below
   the float voltage. The solar & wind priority voltage can't be set above the
