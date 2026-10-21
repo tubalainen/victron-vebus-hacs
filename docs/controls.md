@@ -225,7 +225,14 @@ How a change is made:
   the float voltage. The solar & wind priority voltage can't be set above the
   absorption voltage.
 - A switch changes only its own bit of the device's flag settings, and only bits the
-  device reports as supported.
+  device reports as supported. Other bits keep their value; bits the device doesn't
+  list as supported are taken from the stored value when it is known. Up to 1.1.8,
+  switching a feature *off* (or the UPS function *on*) also cleared bit 15 of
+  setting 0; see the [1.1.9 release notes](releases/v1.1.9.md).
+- A flag change in RAM takes effect at once, without a restart. This was verified
+  with PowerAssist on a MultiPlus-II: switched off, the minimum input current limit
+  dropped from 3.6 A to 0 A and the Multi stopped assisting. Solar & wind priority
+  didn't stop a charge that was already running.
 
 What the switches do:
 

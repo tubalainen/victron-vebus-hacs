@@ -169,7 +169,8 @@ async def test_flag_change_starts_from_the_ram_value() -> None:
     client = await _client(fake)
     await client.set_setting_flag(Setting.FLAGS_0, SettingFlag.WEAK_AC_INPUT, True)
     await client.set_setting_flag(Setting.FLAGS_0, SettingFlag.ASSIST_ENABLED, False)
-    expected = (0x89B0 | SettingFlag.WEAK_AC_INPUT) & ~SettingFlag.ASSIST_ENABLED
+    # Bit 15 stays set (0xC990).
+    expected = (0x89B0 | SettingFlag.WEAK_AC_INPUT) & ~int(SettingFlag.ASSIST_ENABLED)
     assert fake.device.writes[-1] == (0x03, 0, expected)
     assert client.ram_values[0] == expected
     await client.close()

@@ -167,3 +167,64 @@ async def test_force_charge_needs_firmware_400() -> None:
         await client.force_charge_state(ForceChargeState.FLOAT)
     assert fake.device.forced == []
     await client.close()
+
+
+@pytest.mark.parametrize(
+    ("setting", "flag", "before", "after"),
+    [
+        # PowerAssist off.
+        (Setting.FLAGS_0, SettingFlag.ASSIST_ENABLED, 0x89B0, 0x8990),
+        # Weak AC input off.
+        (Setting.FLAGS_0, SettingFlag.WEAK_AC_INPUT, 0xC9B0, 0x89B0),
+        # UPS function on (the bit disables the wave check).
+        (Setting.FLAGS_0, SettingFlag.DISABLE_WAVE_CHECK, 0x89B8, 0x89B0),
+        # Solar & wind priority off.
+        (Setting.FLAGS_2, SettingFlag.SOLAR_WIND_PRIORITY, 0x8210, 0x8010),
+    ],
+)
+async def test_clearing_a_flag_keeps_bit_15(
+    setting: Setting, flag: SettingFlag, before: int, after: int
+) -> None:
+    """Clearing a bit changes only that bit (1.1.9).
+
+    Up to 1.1.8 ``current & ~flag`` inverted an IntFlag, which covers only
+    the members' bits, so bit 15 was cleared as well.
+    """
+    device = SimulatedMultiPlus()
+    device.settings[setting] = before
+    client, fake = await _client(device)
+    assert await client.set_setting_flag(setting, flag, False) == after
+    assert fake.device.writes == [(0x03, setting, after)]
+    await client.close()
+
+
+async def test_persistent_flag_clear_keeps_bit_15() -> None:
+    """The stored configuration keeps the bits that weren't changed."""
+    client, fake = await _client()
+    await client.set_setting_flag(
+        Setting.FLAGS_0, SettingFlag.ASSIST_ENABLED, False, persistent=True
+    )
+    assert fake.device.writes == [(0x01, 0, 0x8990)]
+    assert fake.device.eeprom[0] == 0x8990
+    await client.close()
+
+
+async def test_flag_write_repairs_bits_outside_the_mask() -> None:
+    """Bits the device doesn't list as supported come from the stored value.
+
+    A RAM value written by 1.1.8 lacks bit 15; the next flag change restores
+    it (seen on a MultiPlus-II: 0x81B0 stored, 0x0190 in RAM).
+    """
+    device = SimulatedMultiPlus()
+    device.ram_only_mode = "readback_eeprom"
+    device.settings[0] = 0x0990
+    client, fake = await _client(device)
+    client.readsetting_reports = "eeprom"
+    client.ram_values[0] = 0x0990
+    client.stored_raw[0] = 0x89B0
+    assert (
+        await client.set_setting_flag(Setting.FLAGS_0, SettingFlag.ASSIST_ENABLED, True)
+        == 0x89B0
+    )
+    assert fake.device.writes == [(0x03, 0, 0x89B0)]
+    await client.close()
