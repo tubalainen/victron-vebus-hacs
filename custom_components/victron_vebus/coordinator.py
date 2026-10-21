@@ -80,6 +80,11 @@ ALARM_LEDS: dict[str, Led] = {
     "low_battery": Led.LOW_BATTERY,
     "temperature": Led.TEMPERATURE,
 }
+# Alarms from the rest of the 'L' reply (decoded as VictronConnect does):
+# ripple from the alarm byte, and a VE.Bus error code other than 0, which is
+# an alarm without a warning.
+RIPPLE_CONDITION = 3
+ALARMS: tuple[str, ...] = (*ALARM_LEDS, "ripple", "vebus_error")
 
 type AlarmListener = Callable[[str, AlarmState], None]
 
@@ -141,6 +146,8 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
         self._unavailable_since: float | None = None
         # Last known level of each alarm, and who wants to hear of changes.
         self.alarms: dict[str, AlarmState] = {}
+        # The last VE.Bus error code reported (0 = none), None until known.
+        self.vebus_error_code: int | None = None
         self._alarm_listeners: list[AlarmListener] = []
         self.link = LinkQuality(window=LINK_QUALITY_WINDOW)
         # "Allow critical changes": until when critical entities may be used.
@@ -380,13 +387,24 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
 
     @callback
     def _async_check_alarms(self, state: VeBusState) -> None:
-        if state.leds is None or not state.leds.known:
+        leds = state.leds
+        if leds is None or not leds.known:
             # Unknown LEDs neither raise nor clear an alarm.
             return
-        for alarm, led in ALARM_LEDS.items():
-            level = state.leds.alarm(led)
+        levels = {alarm: leds.alarm(led) for alarm, led in ALARM_LEDS.items()}
+        ripple = leds.condition(RIPPLE_CONDITION)
+        if ripple is not None:
+            levels["ripple"] = ripple
+        code = leds.vebus_error
+        previous_code = self.vebus_error_code
+        if code is not None:
+            levels["vebus_error"] = AlarmState.ALARM if code else AlarmState.OK
+            self.vebus_error_code = code
+        for alarm, level in levels.items():
             previous = self.alarms.get(alarm)
-            if level is previous:
+            # A different error code is a new alarm, though the level stays.
+            new_code = alarm == "vebus_error" and code and code != previous_code
+            if level is previous and not new_code:
                 continue
             self.alarms[alarm] = level
             self._async_update_alarm_issue(alarm, level)
@@ -395,6 +413,8 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
                 continue
             if level is AlarmState.OK:
                 _LOGGER.info("VE.Bus %s alarm cleared", alarm)
+            elif alarm == "vebus_error":
+                _LOGGER.warning("VE.Bus error %s", code)
             else:
                 _LOGGER.warning("VE.Bus %s %s", alarm, level.value)
             for listener in list(self._alarm_listeners):
@@ -403,6 +423,9 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
     @callback
     def _async_update_alarm_issue(self, alarm: str, level: AlarmState) -> None:
         issue_id = self._alarm_issue_id(alarm)
+        placeholders = {"name": self.config_entry.title}
+        if alarm == "vebus_error":
+            placeholders["code"] = str(self.vebus_error_code)
         if level is AlarmState.ALARM and self.config_entry.options.get(
             CONF_ALARM_ISSUES, True
         ):
@@ -413,7 +436,7 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
                 is_fixable=False,
                 severity=ir.IssueSeverity.ERROR,
                 translation_key=f"{alarm}_alarm",
-                translation_placeholders={"name": self.config_entry.title},
+                translation_placeholders=placeholders,
             )
         else:
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
@@ -424,7 +447,7 @@ class VeBusCoordinator(DataUpdateCoordinator[VeBusState]):
     @callback
     def async_clear_issues(self) -> None:
         """Remove the alarm and link issues, e.g. when the entry is unloaded."""
-        for alarm in ALARM_LEDS:
+        for alarm in ALARMS:
             ir.async_delete_issue(self.hass, DOMAIN, self._alarm_issue_id(alarm))
         ir.async_delete_issue(self.hass, DOMAIN, self._link_issue_id)
         ir.async_delete_issue(self.hass, DOMAIN, self._battery_limits_issue_id)

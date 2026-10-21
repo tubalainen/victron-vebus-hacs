@@ -6,17 +6,19 @@ from homeassistant.components.event import EventEntity, EventEntityDescription
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .coordinator import ALARM_LEDS, VeBusConfigEntry, VeBusCoordinator
+from .coordinator import ALARMS, VeBusConfigEntry, VeBusCoordinator
 from .entity import VeBusEntity
 from .vebus import AlarmState
 
 PARALLEL_UPDATES = 0
 
-# "<alarm>_warning" (pre-alarm), "<alarm>_alarm" and "<alarm>_cleared".
+# "<alarm>_warning" (pre-alarm), "<alarm>_alarm" and "<alarm>_cleared". A
+# VE.Bus error has no warning.
 ALARM_EVENT_TYPES: list[str] = [
     f"{alarm}_{suffix}"
-    for alarm in ALARM_LEDS
+    for alarm in ALARMS
     for suffix in ("warning", "alarm", "cleared")
+    if not (alarm == "vebus_error" and suffix == "warning")
 ]
 
 
@@ -50,5 +52,8 @@ class VeBusAlarmEvent(VeBusEntity, EventEntity):
     @callback
     def _async_handle_alarm(self, alarm: str, level: AlarmState) -> None:
         suffix = "cleared" if level is AlarmState.OK else level.value
-        self._trigger_event(f"{alarm}_{suffix}", {"alarm": alarm, "level": level.value})
+        data: dict[str, str | int] = {"alarm": alarm, "level": level.value}
+        if alarm == "vebus_error" and self.coordinator.vebus_error_code is not None:
+            data["error_code"] = self.coordinator.vebus_error_code
+        self._trigger_event(f"{alarm}_{suffix}", data)
         self.async_write_ha_state()

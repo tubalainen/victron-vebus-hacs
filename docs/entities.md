@@ -19,8 +19,8 @@ settings.
 | Charge state | not_charging, init, bulk, absorption, float, storage, repeated/forced absorption, equalise, bulk_stopped |
 | Mode, Front switch | The mode in effect and the physical switch position. |
 | Overload / Low battery / Temperature alarm | ok, warning (LED blinking), alarm (LED on) |
-| Ripple alarm | ok, warning, alarm, from the alarm byte of the `L` reply (since 1.1.13). Only created if the MK3 sends the full reply. Not documented by Victron (decoded as VictronConnect does); no repair issue or event yet. |
-| VE.Bus error code | Diagnostic. 0 = no error; the numbers are in Victron's VE.Bus error code list. From the `L` reply, like the ripple alarm. |
+| Ripple alarm | ok, warning, alarm, from the alarm byte of the `L` reply (since 1.1.13). Only created if the MK3 sends the full reply. Not documented by Victron (decoded as VictronConnect does). Since 1.1.14 also an event and a repair issue, see [Alarm notifications](alarms.md). |
+| VE.Bus error code | Diagnostic. 0 = no error; the numbers are in Victron's VE.Bus error code list. From the `L` reply, like the ripple alarm. Since 1.1.14 a code other than 0 is also an event and a repair issue. |
 | Alarm (event) | Fires when an alarm starts, escalates or clears. See [Alarm notifications](alarms.md). |
 | AC input energy imported / exported, AC output energy, Battery energy charged / discharged | kWh for the Energy dashboard. See [Energy](energy.md). |
 | AC input connected | Mains LED lit, i.e. the AC input relay is closed. |

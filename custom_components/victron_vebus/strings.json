@@ -546,7 +546,12 @@
               "low_battery_cleared": "Low battery cleared",
               "temperature_warning": "Temperature warning",
               "temperature_alarm": "Temperature alarm",
-              "temperature_cleared": "Temperature cleared"
+              "temperature_cleared": "Temperature cleared",
+              "ripple_warning": "Ripple warning",
+              "ripple_alarm": "Ripple alarm",
+              "ripple_cleared": "Ripple cleared",
+              "vebus_error_alarm": "VE.Bus error",
+              "vebus_error_cleared": "VE.Bus error cleared"
             }
           },
           "alarm": {
@@ -554,8 +559,13 @@
             "state": {
               "overload": "Overload",
               "low_battery": "Low battery",
-              "temperature": "Temperature"
+              "temperature": "Temperature",
+              "ripple": "Ripple",
+              "vebus_error": "VE.Bus error"
             }
+          },
+          "error_code": {
+            "name": "Error code"
           },
           "level": {
             "name": "Level",
@@ -813,6 +823,14 @@
     "temperature_alarm": {
       "title": "{name}: high temperature alarm",
       "description": "The Multi reports a **high temperature alarm** and switches off to protect itself, so **AC out 1 and AC out 2 can lose power**.\n\nCheck the ventilation around the Multi, its fans and the ambient temperature, and reduce the load or charge current. (With a battery temperature sensor this alarm can also mean that the battery is too hot or too cold.)\n\nThis message disappears by itself when the alarm clears. To stop these messages, turn off *Show alarms as repair issues* in the integration settings."
+    },
+    "ripple_alarm": {
+      "title": "{name}: high DC ripple alarm",
+      "description": "The Multi reports a **ripple alarm**: the battery voltage ripples too much under load. After repeated ripple alarms the Multi switches off, so **AC out 1 and AC out 2 can lose power**.\n\nCheck the battery cables (too long or too thin) and their connections (loose or corroded), the battery fuse, and whether the battery is too small or worn for the load or charge current. The *Battery ripple voltage* sensor shows the ripple.\n\nThis message disappears by itself when the alarm clears. To stop these messages, turn off *Show alarms as repair issues* in the integration settings."
+    },
+    "vebus_error_alarm": {
+      "title": "{name}: VE.Bus error {code}",
+      "description": "The Multi reports **VE.Bus error {code}**. A VE.Bus error usually means the system can't run normally: the Multi may switch off, so **AC out 1 and AC out 2 can lose power**.\n\nLook up error {code} in Victron's list of VE.Bus error codes (search for \"VE.Bus error codes\" on victronenergy.com) for its cause and what to check. The integration reads this code as VictronConnect does; Victron doesn't document how it is sent.\n\nThis message disappears by itself when the error clears. To stop these messages, turn off *Show alarms as repair issues* in the integration settings."
     },
     "poor_link": {
       "title": "{name}: poor connection to the VE.Bus device",
