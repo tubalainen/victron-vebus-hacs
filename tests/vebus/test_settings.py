@@ -85,7 +85,10 @@ async def test_write_setting_validates_range() -> None:
 
 async def test_write_without_ack_verified_by_readback() -> None:
     """Missing acknowledgements are fine when the value reads back."""
-    client, fake = await _client(SimulatedMultiPlus(ack_writes=False))
+    # Only a device whose ReadSetting reports RAM can verify a RAM write.
+    client, fake = await _client(
+        SimulatedMultiPlus(ack_writes=False, ram_only_mode="ok")
+    )
     assert await client.write_setting(Setting.I_BAT_BULK, 50) == 50
     assert fake.device.settings[4] == 50
     await client.close()

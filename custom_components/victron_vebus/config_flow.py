@@ -544,6 +544,9 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                     )
                 )
             limit = float(user_input["current_limit"])
+            error = actions.check_panel_limit(coordinator, limit, allow_zero=False)
+            if error is not None:
+                return self._async_show_passthru({"base": "invalid_value"}, error)
             return await self._async_confirm(
                 PendingAction(
                     "Resume grid charging",
@@ -551,6 +554,13 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                     lambda: actions.async_set_passthru(coordinator, False, limit),
                 )
             )
+        return self._async_show_passthru()
+
+    def _async_show_passthru(
+        self, errors: dict[str, str] | None = None, error: str = ""
+    ) -> ConfigFlowResult:
+        """Show the passthru form, with an error if the limit was refused."""
+        coordinator = self._coordinator
         # No fixed default: a guess could be above the breaker of the input.
         default_limit = actions.resume_limit(coordinator)
         limit_key = (
@@ -576,7 +586,12 @@ class VeBusOptionsFlow(OptionsFlowWithReload):
                 ),
             }
         )
-        return self.async_show_form(step_id="action_passthru", data_schema=schema)
+        return self.async_show_form(
+            step_id="action_passthru",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"error": error},
+        )
 
     async def async_step_action_setting(
         self, user_input: dict[str, Any] | None = None

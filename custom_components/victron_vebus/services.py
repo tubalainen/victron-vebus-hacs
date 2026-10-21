@@ -143,6 +143,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
         current_limit = call.data.get(ATTR_CURRENT_LIMIT)
         if current_limit is None:
             current_limit = actions.panel_limit(coordinator)
+        else:
+            # 0 A (passthru) is allowed: the call acknowledged the risk.
+            actions.raise_invalid(
+                actions.check_panel_limit(coordinator, current_limit, allow_zero=True)
+            )
 
         async def command() -> None:
             await coordinator.client.set_remote_panel_state(

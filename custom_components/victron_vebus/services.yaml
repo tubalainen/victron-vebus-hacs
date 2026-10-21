@@ -20,7 +20,7 @@ set_remote_panel_state:
       selector:
         number:
           min: 0
-          max: 100
+          max: 200
           step: 0.1
           unit_of_measurement: A
           mode: box
@@ -77,7 +77,7 @@ set_setting:
       selector:
         number:
           min: 0
-          max: 100
+          max: 200
           step: 0.01
           mode: box
     persistent:

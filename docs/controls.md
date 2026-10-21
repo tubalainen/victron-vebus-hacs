@@ -227,12 +227,20 @@ How a change is made:
   with an error, unless the Multi acknowledged a RAM-only write (see above). The
   integration can't tell such a device from one that acknowledges a change and ignores
   it; none of the latter is known. The diagnostics download shows the last write in
-  `last_write`, what ReadSetting reports in `readsetting_reports`, and the acknowledged
-  RAM values in `ram_values`.
+  `last_write`, what ReadSetting reports in `readsetting_reports`, the acknowledged
+  RAM values in `ram_values` and the last 20 permanent writes, failed ones included,
+  in `eeprom_writes`.
 - Values are limited to the range the device reports for each setting. The float
   voltage can't be set above the absorption voltage, nor the absorption voltage below
   the float voltage. The solar & wind priority voltage can't be set above the
-  absorption voltage.
+  absorption voltage. Since 1.1.12 these changes are refused while the other voltage
+  is unknown, rather than written unchecked.
+- Before a value goes to the EEPROM (a switch with *Store permanently*, or *Save
+  settings permanently*), it is read twice and must be the same both times, and it
+  must lie within the range the Multi reports. Otherwise nothing is written.
+- The remote AC input current limit (action, guided action and the limit when grid
+  charging resumes) must lie within the minimum and maximum the Multi reports. 0 A
+  (Stop grid charging) is the exception.
 - A switch changes only its own bit of the device's flag settings, and only bits the
   device reports as supported. Other bits keep their value; bits the device doesn't
   list as supported are taken from the stored value when it is known. Up to 1.1.8,
