@@ -22,6 +22,8 @@ change battery charge voltages or write the EEPROM. They are locked:
 2. Use the critical control: **Mode**, **Stop grid charging (0 A)**, **PowerAssist**, **Weak AC
    input**, **UPS function**, **Absorption voltage**, **Float voltage**, **Start
    equalisation**, **Restart the Multi** or **Save settings permanently**.
+3. Turn **Allow critical changes** off again when you are done. While it is on, *every*
+   critical change is allowed, by anyone using the dashboard.
 
 While the lock is off, a critical control refuses the change and says what could
 happen, for example *"Mode inverter only is a critical change: the Multi disconnects
@@ -106,6 +108,31 @@ device.
 the Multi stays on the grid but supplies the loads from the battery. To only pause
 charging, keep PowerAssist off.
 
+### Mode Off
+
+**What it does:** the inverter and the charger switch off, so **AC out 1 and AC out 2
+lose power** and the battery is not charged. It is not a restart: the Multi stays off
+until another mode is selected.
+
+**How it is protected:**
+
+- The *Mode* select on the dashboard refuses it while *Allow critical changes* is off,
+  with *"Mode off is a critical change: AC out 1 and AC out 2 lose power"*.
+- The guided dialog (*Configure → Device actions → Change the mode*) shows the full
+  warning and only acts after you tick *I understand the risks*.
+- The `set_mode` and `set_remote_panel_state` actions refuse it without
+  `acknowledge_risk: true`.
+- With *Monitor only*, none of these controls exist.
+
+> [!CAUTION]
+> A switched-off Multi can go to **sleep**. Asleep, it also stops powering the MK3, so
+> Home Assistant can no longer switch it back on: only the switch on the device can.
+> Keep the **[Keep awake](connection.md#keep-awake)** switch on (the default) whenever
+> you use *Mode Off*.
+
+**Switching back on:** selecting *On* is a critical change too, so unlock again first.
+The Multi then starts, and the AC outputs come back once it is running.
+
 ## Guided device actions (Configure → Device actions)
 
 The same critical changes, with a full explanation: each action opens a dialog that
@@ -115,7 +142,7 @@ submit. Charger settings and features can be written in RAM or permanently here 
 | Action | What can happen |
 |---|---|
 | **Restart the Multi** | The Multi restarts and its relays open: **AC out 1 and AC out 2 lose power** for several seconds, so **every device connected to them is power cycled** (switched off and on again). Settings changed in RAM are lost. |
-| **Mode: off** | **AC out 1 and AC out 2 lose power** until the mode is changed back. |
+| **Mode: off** | **AC out 1 and AC out 2 lose power** until the mode is changed back. Not a restart. Keep *Keep awake* on, or the Multi can go to sleep and can then only be switched on at the device. See [Mode Off](#mode-off). |
 | **Mode: charger only** | No inverter: the AC outputs **lose power on a grid failure**. |
 | **Mode: inverter only** | The Multi disconnects from the grid (relay switches): AC out 1 switches over to the inverter (fast with the UPS function on, slower without) and is limited to the inverter's power; **AC out 2 loses power**; the battery discharges. |
 | **Mode: on** | Normal operation; if the Multi was off it starts and its relays click. |
