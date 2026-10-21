@@ -56,4 +56,6 @@ async def async_get_config_entry_diagnostics(
         "state": asdict(client.state),
         "statistics": stats,
         "last_write": client.last_write,
+        "ram_values": {str(k): v for k, v in client.ram_values.items()},
+        "stored_raw": {str(k): v for k, v in client.stored_raw.items()},
     }

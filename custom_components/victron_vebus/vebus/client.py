@@ -294,6 +294,12 @@ class VeBusClient:
         self._persistent_writes: dict[int, float] = {}
         # Settings changed in RAM only since the last restart or save.
         self.unsaved_settings: set[int] = set()
+        # RAM values of settings whose ReadSetting reports the stored (EEPROM)
+        # value instead (seen on a MultiPlus-II, firmware 556): the value
+        # written is used until the device restarts or the value is saved.
+        self.ram_values: dict[int, int] = {}
+        # The stored values ReadSetting reported for those settings.
+        self.stored_raw: dict[int, int] = {}
         # The last setting write: reply, read back and the frames of its
         # long-frame session, for diagnostics.
         self.last_write: dict[str, Any] | None = None
@@ -378,7 +384,7 @@ class VeBusClient:
             # Its RAM settings were reset to the stored configuration.
             self.stats.boot_frames += 1
             self._readdress = True
-            self.unsaved_settings.clear()
+            self._forget_ram_changes()
         for waiter in self._waiters:
             if waiter.future.done():
                 continue
@@ -639,11 +645,34 @@ class VeBusClient:
         return result
 
     async def read_setting_raw(self, setting: int) -> int | None:
-        """Read the raw 16-bit value of a setting, None if unsupported."""
+        """Read the raw 16-bit value of a setting, None if unsupported.
+
+        For a setting changed in RAM whose ReadSetting reports the stored
+        value, the RAM value is returned (see ``ram_values``).
+        """
         reply = await self._winmon(
             WinmonCommand.READ_SETTING, setting & 0xFF, setting >> 8
         )
-        return _setting_value(reply)
+        raw = _setting_value(reply)
+        if setting in self.ram_values:
+            if raw is not None:
+                self.stored_raw[setting] = raw
+            return self.ram_values[setting]
+        return raw
+
+    async def _read_setting_locked(self, setting: int) -> int | None:
+        """Read the value in effect of a setting (lock held)."""
+        if setting in self.ram_values:
+            return self.ram_values[setting]
+        return _setting_value(
+            await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
+        )
+
+    def _forget_ram_changes(self) -> None:
+        """RAM settings were reset to the stored configuration (restart)."""
+        self.unsaved_settings.clear()
+        self.ram_values.clear()
+        self.stored_raw.clear()
 
     async def read_setting(self, setting: int) -> float | None:
         """Read a setting and decode it, None if unsupported."""
@@ -789,13 +818,29 @@ class VeBusClient:
             await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
         )
         record["readback"] = readback
-        if readback != raw:
+        if readback == raw:
+            record["result"] = "ok"
+            self.ram_values.pop(setting, None)
+            self.stored_raw.pop(setting, None)
+        elif (
+            not persistent
+            and reply
+            and reply[0] == WinmonReply.WRITE_SETTING_OK
+            and readback is not None
+        ):
+            # Some devices answer ReadSetting with the stored (EEPROM) value.
+            # The RAM-only write was acknowledged, so the RAM value is used
+            # from now on (verified on a MultiPlus-II: the charger followed a
+            # lower charge current while ReadSetting kept the stored value).
+            record["result"] = "ok (read back shows the stored value)"
+            self.ram_values[setting] = raw
+            self.stored_raw[setting] = readback
+        else:
             record["result"] = "read back differs"
             raise VeBusWriteError(
                 f"Setting {setting} reads back {readback} after writing {raw} "
                 f"(WriteViaID reply: {record['reply']}; flags {record['flags']})"
             )
-        record["result"] = "ok"
         if persistent:
             self._persistent_writes[setting] = time.monotonic()
             self.unsaved_settings.discard(setting)
@@ -860,9 +905,7 @@ class VeBusClient:
                 f"Setting {setting} does not support bits 0x{flag:04x}"
             )
         async with self._long_frame_session():
-            current = _setting_value(
-                await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
-            )
+            current = await self._read_setting_locked(setting)
             if current is None:
                 raise VeBusNotSupportedError(f"Setting {setting} cannot be read")
             new = current | flag if enabled else current & ~flag
@@ -881,7 +924,7 @@ class VeBusClient:
         await self._command(CMD_SPECIAL, [F_RESET, 0, 0, 0, 0], None)
         self._readdress = True
         # RAM settings return to the stored configuration.
-        self.unsaved_settings.clear()
+        self._forget_ram_changes()
 
     async def save_settings(self) -> list[int]:
         """Store the settings changed in RAM permanently (EEPROM).
@@ -897,9 +940,7 @@ class VeBusClient:
         saved: list[int] = []
         async with self._long_frame_session():
             for setting in settings:
-                raw = _setting_value(
-                    await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
-                )
+                raw = await self._read_setting_locked(setting)
                 if raw is None:
                     raise VeBusNotSupportedError(f"Setting {setting} cannot be read")
                 await self._write_setting_locked(setting, raw, persistent=True)

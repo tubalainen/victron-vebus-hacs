@@ -85,8 +85,9 @@ was used where it agrees with the specification.
 | **1.0** | First stable release: the features of 0.1–0.7. Monitoring and mode changes are in use on a MultiPlus-II; the items below are still verified only against the simulator. |
 | **1.1** | Every control usable in Home Assistant itself. Critical changes (mode select, passthru, PowerAssist / weak AC / UPS switches, absorption and float voltage, equalise, restart, save) are entities behind an "Allow critical changes" switch that turns itself off after 10 minutes. Entity changes go to RAM; "Save settings permanently" stores the settings changed since the last restart or save (tracked by the client, cleared on restart and boot frames). Actions `set_mode`, `set_setting`, `set_feature`, `equalise`, `restart`, `save_settings` with `acknowledge_risk`. Passthru is remembered because the device may report its minimum limit instead of 0 A; a mode change in passthru keeps 0 A. |
 | **1.1.1** | Texts only: every warning that mentions a restart says that it power cycles every device on AC out 1 and AC out 2, including turning off battery operational limits; the "Monitor and control" setup warning describes the 1.1 lock instead of the guided dialog only. |
-| **1.1.3** | Every setting write is recorded (WriteViaID reply, read back, the frames of the long-frame session) in `last_write` of the diagnostics, and a failed verification names the reply. Maximum absorption time is read in minutes (setting 9 has scale 60). The charge characteristic (setting 10) is read as a bit field. |
 | **1.1.2** | Texts only: the *Passthru* switch and dialog are renamed *Stop grid charging (0 A)*, because "passthru" was mistaken for normal operation (the device state shows Victron's normal grid-through state as passthru). Keys, actions and existing entity IDs are unchanged. |
+| **1.1.3** | Every setting write is recorded (WriteViaID reply, read back, the frames of the long-frame session) in `last_write` of the diagnostics, and a failed verification names the reply. Maximum absorption time is read in minutes (setting 9 has scale 60). The charge characteristic (setting 10) is read as a bit field. |
+| **1.1.4** | RAM-only writes acknowledged with 0x88 are accepted when ReadSetting reports the stored value. The value written is kept (`ram_values`) and used for polling, flag changes and *Save settings permanently* until a restart or save; the number entities show the stored value as an attribute. |
 
 ## 5. Things to verify on real hardware
 
@@ -182,6 +183,11 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
   The reply to the write was not 0x80 or 0x9B (those raise different errors), so it was
   0x87/0x88 or no reply. Either ReadSetting returns the stored (EEPROM) value, or the
   device ignores RAM-only writes. 1.1.3 records the reply to tell these apart.
+- **RAM-only writes, 1.1.3:** the reply to WriteViaID (flags 0x03) for setting 4 is
+  0x88 and ReadSetting keeps returning the stored 40 A. The write takes effect: with
+  the charge current limit at 5 A the charger dropped to about 6 A. So on this
+  firmware ReadSetting returns the EEPROM value, not the RAM value. 1.1.4 trusts the
+  0x88 reply.
 - **Setting 9** (absorption time) reports scale 60: the value is in minutes (8 → 480).
 - **Setting 10** (charge characteristic) is 3 with VictronConnect showing "Fixed +
   storage", and xcellsior saw 1 for "fixed": read as a bit field (bit 0 fixed, bit 1

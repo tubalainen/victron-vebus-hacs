@@ -39,7 +39,7 @@ settings.
 | Battery limit charge/discharge voltage/current (numbers) | Only with *Enable battery operational limits*; firmware 415+. See [Battery operational limits](ess-and-bms.md#battery-operational-limits-advanced-beta). |
 | Remote AC input current limit (number) | *Monitor and control*. |
 | Force absorption / float (buttons) | *Monitor and control*; firmware 400+. |
-| Charge current limit, Configured AC input (2) current limit (numbers) | *Monitor and control*; firmware 412+. RAM only. |
+| Charge current limit, Configured AC input (2) current limit (numbers) | *Monitor and control*; firmware 412+. RAM only. Attribute *Stored value* while a different RAM value is in effect. |
 | Allow critical changes (switch) | *Monitor and control*. Off by default; turns itself off after 10 minutes. See [Controlling the Multi](controls.md). |
 | Mode (select), Stop grid charging (0 A), PowerAssist, Weak AC input, UPS function (switches), Absorption / Float voltage (numbers) | *Monitor and control*; critical. Settings need firmware 412+ and change RAM only. See [Modes and Stop grid charging compared](controls.md#modes-and-stop-grid-charging-compared). |
 | Start equalisation, Restart the Multi, Save settings permanently (buttons) | *Monitor and control*; critical. Equalisation needs firmware 400+, saving 412+. |

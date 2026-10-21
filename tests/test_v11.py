@@ -219,6 +219,38 @@ async def test_routine_controls_need_no_lock(
     assert fake_mk3.device.forced == [2]
 
 
+async def test_ram_value_shown_over_stored_read_back(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """A device whose ReadSetting reports the EEPROM value (1.1.4).
+
+    The number shows the RAM value with the stored value as an attribute,
+    and saving stores the RAM value.
+    """
+    _, coordinator = await _setup(hass)
+    fake_mk3.device.ram_only_mode = "readback_eeprom"
+    entity_id = f"number.{PREFIX}_charge_current_limit"
+    assert "stored_value" not in hass.states.get(entity_id).attributes
+    await _call(hass, "number", "set_value", {"entity_id": entity_id, "value": 39})
+    await coordinator.async_refresh()
+    state = hass.states.get(entity_id)
+    assert state.state == "39.0"
+    assert state.attributes["stored_value"] == 70.0
+
+    await _unlock(hass)
+    await _call(
+        hass,
+        "button",
+        "press",
+        {"entity_id": f"button.{PREFIX}_save_settings_permanently"},
+    )
+    assert fake_mk3.device.eeprom[4] == 39
+    await coordinator.async_refresh()
+    state = hass.states.get(entity_id)
+    assert state.state == "39.0"
+    assert "stored_value" not in state.attributes
+
+
 async def test_buttons(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
     """Equalise, restart and save need the lock."""
     await _setup(hass)
