@@ -167,15 +167,14 @@ class VeBusCurrentLimitNumber(VeBusEntity, NumberEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return the limit the interface reports for the remote panel.
+        """Return the limit set through the remote panel.
 
-        Falls back to the limit in effect if the interface doesn't report it.
+        Unknown until a panel state was sent: the device doesn't report it,
+        only the interface does. The limit in effect is a sensor.
         """
-        config = self._config
-        if config is None:
+        if self._config is None:
             return None
-        remote = self.coordinator.data.remote_current_limit
-        return remote if remote is not None else config.actual_current_limit
+        return self.coordinator.data.remote_current_limit
 
     @property
     def native_min_value(self) -> float:
@@ -238,10 +237,15 @@ class VeBusSettingNumber(VeBusEntity, NumberEntity):
         attributes: dict[str, Any] = {
             "active_value_source": client.active_value_source(setting)
         }
-        raw = client.stored_raw.get(setting)
         info = client.setting_info.get(setting)
-        if raw is not None and info is not None:
+        if info is None:
+            return attributes
+        raw = client.stored_raw.get(setting)
+        if raw is not None:
             attributes["stored_value"] = info.decode(raw)
+        minimum = client.active_minimum.get(setting)
+        if attributes["active_value_source"] == "at_least" and minimum is not None:
+            attributes["active_value_at_least"] = info.decode(minimum)
         return attributes
 
     async def async_set_native_value(self, value: float) -> None:

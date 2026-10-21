@@ -142,11 +142,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         coordinator = _coordinator(hass, call)
         current_limit = call.data.get(ATTR_CURRENT_LIMIT)
         if current_limit is None:
-            config = coordinator.data.config
-            if coordinator.passthru:
-                current_limit = 0.0
-            elif config is not None and not config.dmc_dedicated:
-                current_limit = config.actual_current_limit
+            current_limit = actions.panel_limit(coordinator)
 
         async def command() -> None:
             await coordinator.client.set_remote_panel_state(

@@ -89,6 +89,7 @@ was used where it agrees with the specification.
 | **1.1.3** | Every setting write is recorded (WriteViaID reply, read back, the frames of the long-frame session) in `last_write` of the diagnostics, and a failed verification names the reply. Maximum absorption time is read in minutes (setting 9 has scale 60). The charge characteristic (setting 10) is read as a bit field. |
 | **1.1.4** | RAM-only writes acknowledged with 0x88 are accepted when ReadSetting reports the stored value. The value written is kept (`ram_values`) and used for polling, flag changes and *Save settings permanently* until a restart or save; the number entities show the stored value as an attribute. |
 | **1.1.5** | The Multi is the only source. Setting numbers show where the value comes from (`active_value_source`) and the stored value. What ReadSetting reports (RAM or EEPROM) is learnt from writes, never kept across connections. The configured AC input limit in effect is read from the MasterMultiLED frame while it is below the remote limit (`D`). *Save settings permanently* skips values equal to the stored ones. The remote limit number shows the `D` value. |
+| **1.1.6** | `D` reports the panel state last sent to the MK3, which is `04 00 00` after opening it: it counts only if its mode is the remote mode the device reports, and "off, 0 A" never counts. The remote limit number is unknown until a panel state is sent. A limit in effect above the stored setting 6 shows that ReadSetting reports EEPROM and that RAM differs; the number is then unknown with a lower bound (`active_minimum`). Mode changes keep the known remote limit. |
 
 ## 5. Things to verify on real hardware
 
@@ -195,6 +196,12 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
   diagnostics show 8.0 A in effect after writing 8 A. So the limit in effect is the
   lower of the remote and the RAM configured limit; below the remote limit it reads the
   RAM value of setting 6. 1.1.5 uses this.
+- **`D` after a restart of Home Assistant, 1.1.5:** the MK3 answers `04 00 00 01 c4
+  20 08 00` (off, 0 A) while the Multi runs on (remote mode on, 7.0 A in effect, RAM
+  setting 6 still 7 A, no boot frame). The 1.1.3 write sessions show the same reply
+  before any panel state was sent, and sending it back with flags 0xD0 (do not send
+  the panel state) didn't change the Multi. So `D` is the MK3's own copy of the last
+  `S`, not a value read from the Multi.
 - **Setting 9** (absorption time) reports scale 60: the value is in minutes (8 → 480).
 - **Setting 10** (charge characteristic) is 3 with VictronConnect showing "Fixed +
   storage", and xcellsior saw 1 for "fixed": read as a bit field (bit 0 fixed, bit 1

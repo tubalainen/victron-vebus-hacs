@@ -602,7 +602,8 @@
               "read": "Read from the Multi (RAM)",
               "acknowledged": "Change acknowledged by the Multi",
               "stored": "Stored value (RAM can't be read)",
-              "unverified": "Read from the Multi (RAM or stored not known yet)"
+              "unverified": "Read from the Multi (RAM or stored not known yet)",
+              "at_least": "Unknown, at least the limit in effect"
             }
           },
           "stored_value": {
@@ -619,11 +620,15 @@
               "read": "Read from the Multi (RAM)",
               "acknowledged": "Change acknowledged by the Multi",
               "stored": "Stored value (RAM can't be read)",
-              "unverified": "Read from the Multi (RAM or stored not known yet)"
+              "unverified": "Read from the Multi (RAM or stored not known yet)",
+              "at_least": "Unknown, at least the limit in effect"
             }
           },
           "stored_value": {
             "name": "Stored value"
+          },
+          "active_value_at_least": {
+            "name": "Active value at least"
           }
         }
       },
@@ -636,7 +641,8 @@
               "read": "Read from the Multi (RAM)",
               "acknowledged": "Change acknowledged by the Multi",
               "stored": "Stored value (RAM can't be read)",
-              "unverified": "Read from the Multi (RAM or stored not known yet)"
+              "unverified": "Read from the Multi (RAM or stored not known yet)",
+              "at_least": "Unknown, at least the limit in effect"
             }
           },
           "stored_value": {
@@ -653,7 +659,8 @@
               "read": "Read from the Multi (RAM)",
               "acknowledged": "Change acknowledged by the Multi",
               "stored": "Stored value (RAM can't be read)",
-              "unverified": "Read from the Multi (RAM or stored not known yet)"
+              "unverified": "Read from the Multi (RAM or stored not known yet)",
+              "at_least": "Unknown, at least the limit in effect"
             }
           },
           "stored_value": {
@@ -688,7 +695,8 @@
               "read": "Read from the Multi (RAM)",
               "acknowledged": "Change acknowledged by the Multi",
               "stored": "Stored value (RAM can't be read)",
-              "unverified": "Read from the Multi (RAM or stored not known yet)"
+              "unverified": "Read from the Multi (RAM or stored not known yet)",
+              "at_least": "Unknown, at least the limit in effect"
             }
           },
           "stored_value": {
@@ -705,7 +713,8 @@
               "read": "Read from the Multi (RAM)",
               "acknowledged": "Change acknowledged by the Multi",
               "stored": "Stored value (RAM can't be read)",
-              "unverified": "Read from the Multi (RAM or stored not known yet)"
+              "unverified": "Read from the Multi (RAM or stored not known yet)",
+              "at_least": "Unknown, at least the limit in effect"
             }
           },
           "stored_value": {
