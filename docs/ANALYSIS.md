@@ -209,6 +209,13 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
   01`: an `S` with switch state 0 makes the MK3 forget its panel state. The same frame
   is sent at start-up, which explains the 1.1.5 result. 1.1.7 sends the state read with
   `D` instead of zeros.
+- **1.1.7:** reported to work: the remote limit stays known after setting changes, and
+  a changed setting no longer jumps back. The diagnostics after a restart of Home
+  Assistant (one connect, no setting write since) show `D` = `03 64 00` (on, 10 A),
+  configured limit 8.0 A read from the MasterMultiLED frame (`active_read`, stored
+  6.0 A), the full range of setting 2, link quality 100 % and no boot frames. Whether
+  the MK3 keeps its panel state across the restart, or the remote limit was set again
+  after it, is not visible from the file.
 - **Setting 9** (absorption time) reports scale 60: the value is in minutes (8 → 480).
 - **Setting 10** (charge characteristic) is 3 with VictronConnect showing "Fixed +
   storage", and xcellsior saw 1 for "fixed": read as a bit field (bit 0 fixed, bit 1
