@@ -139,7 +139,9 @@ def decode_led(frame: Frame) -> LedInfo:
     d = frame.data
     if len(d) < 2:
         raise DecodeError("LED frame too short")
-    return LedInfo(on=Led(d[0]), blink=Led(d[1]))
+    if len(d) < 4:
+        return LedInfo(on=Led(d[0]), blink=Led(d[1]))
+    return LedInfo(on=Led(d[0]), blink=Led(d[1]), alarm_flags=d[2], status_flags=d[3])
 
 
 def decode_master_multi_led(frame: Frame) -> ConfigInfo:

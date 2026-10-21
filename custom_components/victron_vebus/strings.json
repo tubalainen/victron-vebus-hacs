@@ -236,6 +236,9 @@
       "battery_ripple": {
         "name": "Battery ripple voltage"
       },
+      "battery_temperature": {
+        "name": "Battery temperature"
+      },
       "state_of_charge": {
         "name": "State of charge"
       },
@@ -302,6 +305,17 @@
           "warning": "Warning",
           "alarm": "Alarm"
         }
+      },
+      "ripple_alarm": {
+        "name": "Ripple alarm",
+        "state": {
+          "ok": "OK",
+          "warning": "Warning",
+          "alarm": "Alarm"
+        }
+      },
+      "vebus_error_code": {
+        "name": "VE.Bus error code"
       },
       "temperature_alarm": {
         "name": "Temperature alarm",

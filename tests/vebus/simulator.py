@@ -27,6 +27,7 @@ MP2_RAM_VAR_RAW: dict[int, tuple[int, int]] = {
     10: (4, 0x8000),
     11: (5, 0x8000),
     12: (6, 0x8000),
+    21: (32668, 0),  # battery temperature; the real scaling is not known
     13: (32568, 0),
     14: (0xFFFF, 0),
     15: (0xFFFF, 0),
@@ -72,6 +73,16 @@ class SimulatedMultiPlus:
     charge_sub_state: int = 3
     leds_on: int = 0x09
     leds_blink: int = 0x00
+    # The rest of the 'L' reply, as a MultiPlus-II (fw 556) sends it:
+    # alarm byte, status byte (VE.Bus error code), 0x80, 0x00.
+    led_alarm_flags: int = 0x00
+    # RAM variables the device doesn't describe or read (with the request
+    # they are in), as RAM 10 on a MultiPlus-II (fw 556).
+    unsupported_ram_vars: set[int] = field(default_factory=set)
+    # RAM variables whose GetRAMVarInfo gets no reply.
+    unanswered_ram_var_info: set[int] = field(default_factory=set)
+    led_status_flags: int = 0x00
+    short_led_reply: bool = False
     switch_register: int = 0x30 | 0x03 | 0x04
     current_limit: int = 160  # 0.1 A, the remote panel limit
     # Panel state held by the interface ('D'): switch state and limit. An MK3
@@ -102,6 +113,7 @@ class SimulatedMultiPlus:
             14: 300,
             15: (-350) & 0xFFFF,
             16: 50,
+            21: 2150,  # 21.5 °C
         }
     )
     settings: dict[int, int] = field(
@@ -262,7 +274,10 @@ class SimulatedMultiPlus:
                 self.interface_flags = data[0]
             return [encode_frame(ord("H"), [self.interface_flags])]
         if cmd == "L":
-            return [encode_frame(ord("L"), [self.leds_on, self.leds_blink])]
+            data = [self.leds_on, self.leds_blink]
+            if not self.short_led_reply:
+                data += [self.led_alarm_flags, self.led_status_flags, 0x80, 0x00]
+            return [encode_frame(ord("L"), data)]
         if cmd == "F":
             return self._special(data[0], data[1:])
         if cmd in "WXYZ":
@@ -382,13 +397,15 @@ class SimulatedMultiPlus:
                         return [0x90, 0, 0]
                     values += _u16(assistant.get(var, 0))
                     continue
-                if var not in ram:
+                if var not in ram or var in self.unsupported_ram_vars:
                     return [0x90, 0, 0]
                 values += _u16(ram[var])
             return [0x85, *values]
         if cmd == 0x36:
             var = args[0] | args[1] << 8
-            if var not in MP2_RAM_VAR_RAW:
+            if var in self.unanswered_ram_var_info:
+                return []
+            if var not in MP2_RAM_VAR_RAW or var in self.unsupported_ram_vars:
                 return [0x90, 0, 0]
             scale, offset = MP2_RAM_VAR_RAW[var]
             return [0x8E, *_u16(scale), 0x8F, *_u16(offset)]
