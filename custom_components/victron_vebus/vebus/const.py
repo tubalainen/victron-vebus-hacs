@@ -167,7 +167,9 @@ class RamVar(IntEnum):
     INVERTER_POWER_2 = 15  # filtered, AC input side
     OUTPUT_POWER = 16  # filtered, AC output
     # Not in protocol 3.14; named "Battery temperature" by VictronConnect
-    # (xcellsior/ve-bus-programming FINDINGS §12.4). Scaling from the device.
+    # (xcellsior/ve-bus-programming FINDINGS §12.4). Scaling from the device:
+    # a MultiPlus-II (fw 556) reports 0.5 and -546 (half kelvin), and the
+    # value matched VictronConnect.
     BATTERY_TEMPERATURE = 21
 
 

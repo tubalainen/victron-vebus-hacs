@@ -27,7 +27,7 @@ MP2_RAM_VAR_RAW: dict[int, tuple[int, int]] = {
     10: (4, 0x8000),
     11: (5, 0x8000),
     12: (6, 0x8000),
-    21: (32668, 0),  # battery temperature; the real scaling is not known
+    21: (0x7FFE, 0x10000 - 546),  # battery temperature: 0.5 K, -273 K
     13: (32568, 0),
     14: (0xFFFF, 0),
     15: (0xFFFF, 0),
@@ -113,7 +113,7 @@ class SimulatedMultiPlus:
             14: 300,
             15: (-350) & 0xFFFF,
             16: 50,
-            21: 2150,  # 21.5 °C
+            21: 589,  # 21.5 °C
         }
     )
     settings: dict[int, int] = field(
