@@ -21,10 +21,15 @@ from .const import (
     DOMAIN,
     SETUP_TIMEOUT,
 )
-from .coordinator import VeBusConfigEntry, VeBusCoordinator, VeBusRuntimeData
+from .coordinator import (
+    WRITABLE_SETTINGS,
+    VeBusConfigEntry,
+    VeBusCoordinator,
+    VeBusRuntimeData,
+)
 from .entity import device_identifier, system_device_info
 from .services import async_setup_services
-from .vebus import Setting, VeBusClient, VeBusError
+from .vebus import VeBusClient, VeBusError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,18 +58,6 @@ REMOVED_ENTITIES: tuple[tuple[str, str], ...] = (
             "temperature",
         )
     ),
-)
-# Settings that control entities may change; their ranges are needed up front.
-WRITABLE_SETTINGS = (
-    # Flag settings: their maximum is the mask of supported bits.
-    Setting.FLAGS_0,
-    Setting.FLAGS_2,
-    Setting.U_BAT_ABSORPTION,
-    Setting.U_BAT_FLOAT,
-    Setting.I_BAT_BULK,
-    Setting.I_MAINS_LIMIT_AC1,
-    Setting.I_MAINS_LIMIT_AC2,
-    Setting.SOLAR_WIND_PRIORITY_VOLTAGE,
 )
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import functools
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
@@ -21,7 +22,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import actions
 from .const import CONF_ENABLE_CONTROLS
 from .coordinator import VeBusConfigEntry, VeBusCoordinator
-from .entity import VeBusEntity
+from .entity import VeBusEntity, async_add_when_ready
 from .vebus import Setting, SettingFlag
 from .vebus.models import ConfigInfo
 
@@ -137,11 +138,18 @@ async def async_setup_entry(
     if entry.options.get(CONF_ENABLE_CONTROLS, False):
         entities.append(VeBusAllowCriticalSwitch(coordinator, ALLOW_CRITICAL))
         entities.append(VeBusPassthruSwitch(coordinator, PASSTHRU))
-        entities.extend(
-            VeBusFlagSwitch(coordinator, description)
-            for description in FLAG_SWITCHES
-            if coordinator.can_write_flag(description.setting, description.flag)
-            and description.exists_fn(coordinator)
+        # Flag switches may depend on setting ranges read later.
+        async_add_when_ready(
+            coordinator,
+            async_add_entities,
+            [
+                (
+                    description.key,
+                    functools.partial(_flag_switch_ready, coordinator, description),
+                    functools.partial(VeBusFlagSwitch, coordinator, description),
+                )
+                for description in FLAG_SWITCHES
+            ],
         )
         if coordinator.client.ess_records:
             entities.append(VeBusEssControlSwitch(coordinator, ESS_CONTROL))
@@ -150,6 +158,14 @@ async def async_setup_entry(
                 for description in ESS_FLAG_SWITCHES
             )
     async_add_entities(entities)
+
+
+def _flag_switch_ready(
+    coordinator: VeBusCoordinator, description: VeBusFlagSwitchEntityDescription
+) -> bool:
+    return coordinator.can_write_flag(
+        description.setting, description.flag
+    ) and description.exists_fn(coordinator)
 
 
 class VeBusKeepAwakeSwitch(VeBusEntity, SwitchEntity, RestoreEntity):

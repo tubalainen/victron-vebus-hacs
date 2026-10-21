@@ -1,4 +1,4 @@
-"""Tests for reading the configured input current limit in effect (1.1.5)."""
+"""Tests for the remote panel limit and the MK3 panel state (1.1.5 to 1.1.10)."""
 
 from __future__ import annotations
 
@@ -51,69 +51,29 @@ async def test_panel_state_must_match_the_remote_mode() -> None:
     await client.close()
 
 
-async def test_limit_below_remote_limit_is_read() -> None:
-    """Below the remote panel limit, the limit in effect is the RAM value."""
-    fake = _multiplus()
-    client = await _client(fake)
-    await client.set_remote_panel_state(Mode.ON, 16)
-    await client.write_setting(Setting.I_MAINS_LIMIT_AC1, 7)
-    assert client.active_value_source(Setting.I_MAINS_LIMIT_AC1) == "acknowledged"
-    state = await client.poll(full=True)
-    assert state.config is not None
-    assert state.config.actual_current_limit == 7.0
-    assert client.active_read == {6: 70}
-    assert client.active_value_source(Setting.I_MAINS_LIMIT_AC1) == "read"
-    assert state.settings[6] == 7.0
-    assert client.stored_raw[6] == 160
-    await client.close()
+async def test_configured_limit_is_not_derived() -> None:
+    """The limit in effect doesn't set the configured limit (1.1.10).
 
-
-async def test_limit_above_stored_after_a_new_connection() -> None:
-    """Without a panel state in the MK3 the remote limit is unknown.
-
-    As on the MultiPlus-II: stored 6 A, 7 A in RAM and in effect. The limit
-    in effect above the stored value shows that ReadSetting reports the
-    EEPROM and that RAM differs, but not its value.
+    1.1.5 to 1.1.9 read the configured limit from the limit in effect while
+    that was below the remote limit; on a MultiPlus-II that rule held in some
+    readings and not in others.
     """
     fake = _multiplus(stored=60)
     client = await _client(fake)
-    await client.set_remote_panel_state(Mode.ON, 9)
+    await client.set_remote_panel_state(Mode.ON, 16)
     await client.write_setting(Setting.I_MAINS_LIMIT_AC1, 7)
-    await client.close()
-
-    # The MK3 lost its panel state (say it was unplugged).
-    fake.device.panel_state = (4, 0)
-    client = await _client(fake)
     state = await client.poll(full=True)
-    assert state.remote_current_limit is None
-    assert client.readsetting_reports == "eeprom"
-    assert client.stored_raw[6] == 60
-    assert client.active_minimum == {6: 70}
-    assert client.active_value_source(Setting.I_MAINS_LIMIT_AC1) == "at_least"
-    assert state.settings[6] is None
-    # Nothing acknowledged, so nothing to save.
-    assert client.unsaved_settings == set()
-
-    # Once the remote limit is known again, the value is read.
-    await client.set_remote_panel_state(Mode.ON, 9)
-    state = await client.poll(full=True)
-    assert client.active_value_source(Setting.I_MAINS_LIMIT_AC1) == "read"
+    assert state.config is not None
+    assert state.config.actual_current_limit == 7.0
+    assert client.active_value_source(Setting.I_MAINS_LIMIT_AC1) == "acknowledged"
     assert state.settings[6] == 7.0
     await client.close()
 
-
-async def test_limit_at_or_below_stored_is_not_guessed() -> None:
-    """A limit in effect at or below the stored value proves nothing."""
-    fake = _multiplus()
+    # After a new connection only the stored value is known.
     client = await _client(fake)
     state = await client.poll(full=True)
-    assert state.config is not None
-    assert state.config.actual_current_limit == 16.0
-    assert client.active_read == {}
-    assert client.active_minimum == {6: 160}
-    assert client.readsetting_reports is None
     assert client.active_value_source(Setting.I_MAINS_LIMIT_AC1) == "unverified"
-    assert state.settings[6] == 16.0
+    assert state.settings[6] == 6.0
     await client.close()
 
 
@@ -163,7 +123,6 @@ async def test_setting_write_keeps_the_panel_state() -> None:
     assert mode1[-1][3:8] == bytes([3, 100, 0, 0x01, 0x90])
     state = await client.poll(full=True)
     assert state.remote_current_limit == 10.0
-    assert client.active_value_source(Setting.I_MAINS_LIMIT_AC1) == "read"
     assert state.settings[6] == 8.0
     await client.close()
 

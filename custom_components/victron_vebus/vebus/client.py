@@ -323,13 +323,6 @@ class VeBusClient:
         self.ram_values: dict[int, int] = {}
         # Stored (EEPROM) values, known while ReadSetting reports them.
         self.stored_raw: dict[int, int] = {}
-        # RAM values the device reports in another way: the configured input
-        # current limit is the limit in effect while that is below the remote
-        # panel limit.
-        self.active_read: dict[int, int] = {}
-        # Lower bounds of RAM values: the configured input current limit is at
-        # least the limit in effect.
-        self.active_minimum: dict[int, int] = {}
         self.remote_state_supported = True
         self._remote_state_failures = 0
         # The panel state read with 'D' at the start of the last long-frame
@@ -372,8 +365,6 @@ class VeBusClient:
         self.readsetting_reports = None
         self.ram_values.clear()
         self.stored_raw.clear()
-        self.active_read.clear()
-        self.active_minimum.clear()
         self._last_rx = time.monotonic()
         self._reader_task = asyncio.create_task(
             self._read_loop(), name=f"vebus reader {self.url}"
@@ -720,27 +711,9 @@ class VeBusClient:
             WinmonCommand.READ_SETTING, setting & 0xFF, setting >> 8
         )
         raw = _setting_value(reply)
-        active = self.active_read.get(setting)
-        minimum = self.active_minimum.get(setting)
-        if (
-            raw is not None
-            and self.readsetting_reports is None
-            and (
-                (active is not None and active != raw)
-                or (minimum is not None and raw < minimum)
-            )
-        ):
-            # The device reports a RAM value that ReadSetting doesn't show.
-            self.readsetting_reports = "eeprom"
         if raw is not None and self.readsetting_reports == "eeprom":
             self.stored_raw[setting] = raw
-        if active is not None:
-            return active
-        if setting in self.ram_values:
-            return self.ram_values[setting]
-        if self._active_unknown(setting):
-            return None
-        return raw
+        return self.ram_values.get(setting, raw)
 
     async def _read_setting_locked(self, setting: int) -> int | None:
         """Read the value in effect of a setting (lock held)."""
@@ -754,82 +727,21 @@ class VeBusClient:
         """RAM settings were reset to the stored configuration (restart)."""
         self.unsaved_settings.clear()
         self.ram_values.clear()
-        self.active_read.clear()
-        self.active_minimum.clear()
-
-    def _active_unknown(self, setting: int) -> bool:
-        """Return True if the RAM value is known to differ from the stored one.
-
-        That is, the device reports a lower bound above the stored value but
-        neither the value itself nor a change it acknowledged.
-        """
-        minimum = self.active_minimum.get(setting)
-        stored = self.stored_raw.get(setting)
-        return (
-            self.readsetting_reports == "eeprom"
-            and minimum is not None
-            and stored is not None
-            and minimum > stored
-            and setting not in self.active_read
-            and setting not in self.ram_values
-        )
-
-    def _read_input_limit(self, state: VeBusState) -> None:
-        """Read the configured input current limit in effect (RAM).
-
-        The limit in effect is the lower of the remote panel limit and the
-        configured limit, unless the panel may overrule the configured limit.
-        Below the remote panel limit it is therefore the configured limit;
-        otherwise the configured limit is at least the limit in effect.
-        Verified on a MultiPlus-II (firmware 556): remote 9 A and a RAM-only
-        configured limit of 7 A give 7 A in effect.
-        """
-        setting = Setting.I_MAINS_LIMIT_AC1
-        config = state.config
-        remote = state.remote_current_limit
-        info = self.setting_info.get(setting)
-        if (
-            info is None
-            or config is None
-            or config.dmc_dedicated
-            or config.panel_can_override_limit
-            or config.last_active_ac_input != 0
-            or config.actual_current_limit <= 0
-        ):
-            self.active_read.pop(setting, None)
-            self.active_minimum.pop(setting, None)
-            return
-        raw = info.encode(config.actual_current_limit)
-        if remote is not None and config.actual_current_limit < remote:
-            self.active_read[setting] = raw
-            self.active_minimum.pop(setting, None)
-            value: float | None = info.decode(raw)
-        else:
-            self.active_read.pop(setting, None)
-            self.active_minimum[setting] = raw
-            if not self._active_unknown(setting):
-                return
-            value = None
-        if setting in SLOW_SETTINGS:
-            state.settings[setting] = value
 
     def active_value_source(self, setting: int) -> str:
         """Where the value in effect of a setting comes from.
 
-        "read": the device reports the RAM value (ReadSetting, or for the input
-        current limit the limit in effect). "acknowledged": the device
+        "read": ReadSetting reports the RAM value. "acknowledged": the device
         acknowledged a RAM-only change that ReadSetting does not show.
-        "at_least": the RAM value differs from the stored one and is at least
-        ``active_minimum``, but its value is unknown. "stored": ReadSetting
-        reports the stored value and RAM can't be read. "unverified": nothing
-        has shown yet which of the two ReadSetting reports.
+        "stored": ReadSetting reports the stored value and RAM can't be read.
+        "unverified": no write has shown yet which of the two it reports.
+
+        The configured input current limit is not derived from the limit in
+        effect: that worked in some readings on a MultiPlus-II and not in
+        others (1.1.10).
         """
-        if setting in self.active_read:
-            return "read"
         if setting in self.ram_values:
             return "acknowledged"
-        if self._active_unknown(setting):
-            return "at_least"
         if self.readsetting_reports == "ram":
             return "read"
         if self.readsetting_reports == "eeprom":
@@ -898,47 +810,83 @@ class VeBusClient:
                 f" (device reports {version if version is not None else 'unknown'})"
             )
 
-    async def complete_setting_info(self, settings: Iterable[int]) -> None:
-        """Re-read setting info in long-frame mode where mode 1 gave no range.
-
-        The Winmon mode 1 reply can be cut short before the minimum and
-        maximum, which writable settings need.
-        """
-        # Settings without any info are not supported by the device.
-        missing = [
+    def missing_ranges(self, settings: Iterable[int]) -> list[int]:
+        """Return the settings the device has but whose range isn't known."""
+        return [
             setting
             for setting in settings
             if (info := self.setting_info.get(setting)) is not None
             and (info.minimum is None or info.maximum is None)
         ]
+
+    async def complete_setting_info(
+        self, settings: Iterable[int], *, warn: bool = True
+    ) -> list[int]:
+        """Re-read setting info in long-frame mode where mode 1 gave no range.
+
+        The Winmon mode 1 reply can be cut short before the minimum and
+        maximum, which writable settings need. Every setting is tried a few
+        times, and so is the long-frame session. Returns the settings whose
+        range is now known.
+        """
+        missing = self.missing_ranges(settings)
         if not missing:
-            return
-        async with self._long_frame_session():
-            for setting in missing:
-                # A reply can be lost or cut short now and then: try again.
-                for _ in range(INIT_ATTEMPTS):
-                    try:
-                        reply = await self._winmon_locked(
-                            WinmonCommand.GET_SETTING_INFO, setting & 0xFF, setting >> 8
-                        )
-                        info = decode_setting_info(reply, long_form=True)
-                    except VeBusNotSupportedError as err:
-                        _LOGGER.debug("Setting info %s not available: %s", setting, err)
-                        break
-                    except (VeBusTimeoutError, DecodeError) as err:
-                        _LOGGER.debug("Setting info %s not available: %s", setting, err)
-                        continue
-                    if info is None:
-                        break
-                    self.setting_info[setting] = info
-                    if info.minimum is not None and info.maximum is not None:
-                        break
-                else:
-                    _LOGGER.warning(
-                        "The range of setting %s could not be read; it can't be"
-                        " changed until the integration is reloaded",
-                        setting,
-                    )
+            return []
+        completed: list[int] = []
+        for attempt in range(1, INIT_ATTEMPTS + 1):
+            try:
+                async with self._long_frame_session():
+                    for setting in list(missing):
+                        if await self._read_range_locked(setting):
+                            missing.remove(setting)
+                            completed.append(setting)
+            except VeBusTimeoutError as err:
+                # Switching to long frames failed; try the session again.
+                _LOGGER.debug("Long-frame session failed (%s): %s", attempt, err)
+                continue
+            break
+        if missing and warn:
+            _LOGGER.warning(
+                "The range of settings %s could not be read; they can't be"
+                " changed yet. The integration keeps trying",
+                ", ".join(str(setting) for setting in missing),
+            )
+        return completed
+
+    async def _read_range_locked(self, setting: int) -> bool:
+        """Read one setting's info in long-frame mode (lock held).
+
+        Returns True once minimum and maximum are known. Only a "setting not
+        supported" reply ends the attempts early; anything else (no reply, a
+        reply cut short or one meant for another request) is tried again.
+        """
+        for _ in range(INIT_ATTEMPTS):
+            try:
+                reply = await self._winmon_locked(
+                    WinmonCommand.GET_SETTING_INFO, setting & 0xFF, setting >> 8
+                )
+            except VeBusNotSupportedError as err:
+                _LOGGER.debug("Setting info %s not available: %s", setting, err)
+                return False
+            except VeBusTimeoutError as err:
+                _LOGGER.debug("Setting info %s: %s", setting, err)
+                continue
+            if reply and reply[0] == WinmonReply.SETTING_NOT_SUPPORTED:
+                return False
+            try:
+                info = decode_setting_info(reply, long_form=True)
+            except DecodeError as err:
+                _LOGGER.debug("Setting info %s: %s", setting, err)
+                continue
+            if info is None:
+                _LOGGER.debug(
+                    "Setting info %s: unexpected reply %s", setting, reply.hex()
+                )
+                continue
+            self.setting_info[setting] = info
+            if info.minimum is not None and info.maximum is not None:
+                return True
+        return False
 
     def _check_persistent_rate(self, setting: int) -> None:
         last = self._persistent_writes.get(setting)
@@ -1002,9 +950,6 @@ class VeBusClient:
             await self._winmon_locked(WinmonCommand.READ_SETTING, setting, 0)
         )
         record["readback"] = readback
-        # Read again from the device on the next poll.
-        self.active_read.pop(setting, None)
-        self.active_minimum.pop(setting, None)
         if readback == raw:
             record["result"] = "ok"
             self.ram_values.pop(setting, None)
@@ -1621,7 +1566,6 @@ class VeBusClient:
                     setattr(state, attr, None)
 
         await self._poll_remote_limit(state)
-        self._read_input_limit(state)
 
         try:
             state.ram.update(await self.read_ram_vars(FAST_RAM_VARS))
@@ -1705,7 +1649,6 @@ class VeBusClient:
         config = await self.read_config()
         state = replace(self.state, config=config, settings=dict(self.state.settings))
         await self._poll_remote_limit(state)
-        self._read_input_limit(state)
         self.state = state
         self._config_since_poll = True
         return self.state

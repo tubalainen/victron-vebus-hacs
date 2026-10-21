@@ -228,3 +228,48 @@ async def test_flag_write_repairs_bits_outside_the_mask() -> None:
     )
     assert fake.device.writes == [(0x03, 0, 0x89B0)]
     await client.close()
+
+
+async def test_setting_info_retries_unexpected_replies() -> None:
+    """A stray reply doesn't end the attempts silently (1.1.10).
+
+    1.1.9 took a reply meant for another request as "setting not supported"
+    and left the range unknown without a warning.
+    """
+    device = SimulatedMultiPlus()
+    device.truncate_setting_info = True
+    device.stray_setting_info_replies = 2
+    client, _ = await _client(device)
+    assert client.setting_info[Setting.U_BAT_FLOAT].maximum is None
+    completed = await client.complete_setting_info([Setting.U_BAT_FLOAT])
+    assert completed == [Setting.U_BAT_FLOAT]
+    assert client.setting_info[Setting.U_BAT_FLOAT].maximum is not None
+    await client.close()
+
+
+async def test_setting_info_retries_the_session() -> None:
+    """A lost reply when switching to long frames is tried again."""
+    device = SimulatedMultiPlus()
+    device.truncate_setting_info = True
+    client, _ = await _client(device)
+    device.drop_replies["D"] = 1
+    completed = await client.complete_setting_info([Setting.I_BAT_BULK])
+    assert completed == [Setting.I_BAT_BULK]
+    await client.close()
+
+
+async def test_setting_info_not_supported_is_final() -> None:
+    """A "setting not supported" reply isn't tried again."""
+    device = SimulatedMultiPlus()
+    device.truncate_setting_info = True
+    client, fake = await _client(device)
+    device.missing_setting_info = {Setting.I_BAT_BULK}
+    before = len(fake.device.received)
+    assert await client.complete_setting_info([Setting.I_BAT_BULK]) == []
+    info_requests = [
+        frame
+        for frame in fake.device.received[before:]
+        if len(frame) > 3 and frame[3] == 0x35
+    ]
+    assert len(info_requests) == 1
+    await client.close()

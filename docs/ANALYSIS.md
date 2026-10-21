@@ -93,6 +93,7 @@ was used where it agrees with the specification.
 | **1.1.7** | Returning to Winmon mode 1 (after a long-frame session and at start-up) sends the panel state read with `D` back to the MK3 (on, charger only or inverter only; flag 0x10 as before), so the MK3 keeps it. A poll no longer undoes a setting write or a refresh made while it ran. Setting ranges missing at start-up are read up to three times. |
 | **1.1.8** | Solar & wind priority entities are also created when the device reports no mask of supported bits for setting 60 but a range for setting 88 (the priority voltage), as the guided dialog already allowed. The ranges of settings 0 and 60 are re-read in long-frame mode at start-up. |
 | **1.1.9** | Clearing a flag bit no longer clears bit 15: `current & ~flag` inverted an `IntFlag`, which covers only its members' bits (since 0.2). Bits outside the mask of supported bits are never changed and are taken from the stored value when it is known, which also repairs a RAM value written by 1.1.8. |
+| **1.1.10** | The configured input current limit is no longer derived from the limit in effect. Reading setting ranges retries anything but a 0x91 reply (a stray reply ended it silently before) and the long-frame session; ranges still missing are read again every 5 minutes and the entities that need them are added then. |
 
 ## 5. Things to verify on real hardware
 
@@ -238,4 +239,14 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
   PowerAssist was off. The same write showed the bit 15 bug: setting 0 `0x81B0` was
   written as `0x0190` instead of `0x8190`; the stored value was untouched (RAM-only
   write).
+- **1.1.9:** the next flag write (PowerAssist on) wrote `0x81B0` and read it back, so
+  bit 15 was restored. Two new observations:
+  - At one start-up every setting range came back without a maximum, in mode 1 and
+    in the long-frame completion, with no warning in the log; a reload read them all.
+    The completion took a reply it didn't expect as "not supported" and stopped.
+  - With the remote limit at 10 A the limit in effect was 10.0 A, although the
+    configured limit had been written as 8 A in RAM and nothing had changed it
+    (earlier readings: remote 9 / configured 7 → 7; remote 10 / configured 8 → 8).
+    The rule "limit in effect = the lower of remote and configured" therefore doesn't
+    always hold; 1.1.10 stops deriving the configured limit from it.
 - Mode changes and the remote current limit work; link quality 100%.
