@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.victron_vebus.const import CONF_SCAN_INTERVAL, DOMAIN
+from custom_components.victron_vebus.const import (
+    CONF_ALARM_ISSUES,
+    CONF_SCAN_INTERVAL,
+    DOMAIN,
+)
 from custom_components.victron_vebus.coordinator import VeBusCoordinator
 from custom_components.victron_vebus.vebus import RamVar, VeBusClient
 
@@ -157,3 +162,128 @@ async def test_led_conditions_and_block_mode(
     assert leds.block_mode is True
     assert leds.vebus_error == 0
     await client.close()
+
+
+# ---------------------------------------------------------------------------
+# Ripple and VE.Bus error alarms (1.1.14)
+
+
+async def _alarm_setup(
+    hass: HomeAssistant, **options: object
+) -> tuple[VeBusCoordinator, MockConfigEntry]:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="HQ123",
+        title="Victron VE.Bus",
+        data={"device": "/dev/fake"},
+        options={CONF_SCAN_INTERVAL: 30, **options},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator: VeBusCoordinator = entry.runtime_data.coordinator
+    await _refresh(hass, coordinator)
+    return coordinator, entry
+
+
+def _event(hass: HomeAssistant) -> tuple[str | None, dict[str, object]]:
+    state = hass.states.get(f"event.{PREFIX}_alarm")
+    assert state is not None
+    return state.attributes.get("event_type"), dict(state.attributes)
+
+
+async def test_ripple_alarm_event_and_issue(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """A ripple warning fires an event; a ripple alarm also raises an issue."""
+    coordinator, entry = await _alarm_setup(hass)
+    issue_id = f"ripple_alarm_{entry.entry_id}"
+    issues = ir.async_get(hass)
+    assert coordinator.alarms["ripple"] == "ok"
+    assert _event(hass)[0] is None
+
+    fake_mk3.device.led_alarm_flags = 0x08
+    await _refresh(hass, coordinator)
+    event_type, attributes = _event(hass)
+    assert event_type == "ripple_warning"
+    assert attributes["alarm"] == "ripple"
+    assert issues.async_get_issue(DOMAIN, issue_id) is None
+
+    fake_mk3.device.led_alarm_flags = 0x80
+    await _refresh(hass, coordinator)
+    assert _event(hass)[0] == "ripple_alarm"
+    issue = issues.async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_key == "ripple_alarm"
+
+    fake_mk3.device.led_alarm_flags = 0
+    await _refresh(hass, coordinator)
+    assert _event(hass)[0] == "ripple_cleared"
+    assert issues.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_vebus_error_event_and_issue(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """A VE.Bus error code raises an issue naming it; a new code fires again."""
+    coordinator, entry = await _alarm_setup(hass)
+    issue_id = f"vebus_error_alarm_{entry.entry_id}"
+    issues = ir.async_get(hass)
+    assert coordinator.alarms["vebus_error"] == "ok"
+
+    fake_mk3.device.led_status_flags = 0x03
+    await _refresh(hass, coordinator)
+    event_type, attributes = _event(hass)
+    assert event_type == "vebus_error_alarm"
+    assert attributes["error_code"] == 3
+    issue = issues.async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_placeholders == {"name": "Victron VE.Bus", "code": "3"}
+
+    # Block mode (bit 7) is not an error, a different code is.
+    fake_mk3.device.led_status_flags = 0x80 | 0x08
+    await _refresh(hass, coordinator)
+    assert _event(hass)[1]["error_code"] == 8
+    issue = issues.async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_placeholders["code"] == "8"
+
+    fake_mk3.device.led_status_flags = 0x80
+    await _refresh(hass, coordinator)
+    assert _event(hass)[0] == "vebus_error_cleared"
+    assert issues.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_l_alarms_without_issues_option_and_on_unload(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """The issue option covers the new alarms; unloading removes their issues."""
+    fake_mk3.device.led_alarm_flags = 0x80
+    fake_mk3.device.led_status_flags = 0x05
+    coordinator, entry = await _alarm_setup(hass, **{CONF_ALARM_ISSUES: False})
+    issues = ir.async_get(hass)
+    assert coordinator.alarms["ripple"] == "alarm"
+    assert issues.async_get_issue(DOMAIN, f"ripple_alarm_{entry.entry_id}") is None
+
+    hass.config_entries.async_update_entry(entry, options={CONF_SCAN_INTERVAL: 30})
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data.coordinator
+    await _refresh(hass, coordinator)
+    assert issues.async_get_issue(DOMAIN, f"ripple_alarm_{entry.entry_id}")
+    assert issues.async_get_issue(DOMAIN, f"vebus_error_alarm_{entry.entry_id}")
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert issues.async_get_issue(DOMAIN, f"ripple_alarm_{entry.entry_id}") is None
+    assert issues.async_get_issue(DOMAIN, f"vebus_error_alarm_{entry.entry_id}") is None
+
+
+async def test_short_led_reply_raises_no_l_alarms(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """Without the alarm and status bytes there is nothing to report."""
+    fake_mk3.device.short_led_reply = True
+    coordinator, _ = await _alarm_setup(hass)
+    assert "ripple" not in coordinator.alarms
+    assert "vebus_error" not in coordinator.alarms
