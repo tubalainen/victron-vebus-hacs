@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 from custom_components.victron_vebus.actions import panel_limit
@@ -68,7 +69,7 @@ async def test_limit_below_remote_limit_is_read() -> None:
 
 
 async def test_limit_above_stored_after_a_new_connection() -> None:
-    """After a restart of Home Assistant the remote limit is unknown.
+    """Without a panel state in the MK3 the remote limit is unknown.
 
     As on the MultiPlus-II: stored 6 A, 7 A in RAM and in effect. The limit
     in effect above the stored value shows that ReadSetting reports the
@@ -80,6 +81,8 @@ async def test_limit_above_stored_after_a_new_connection() -> None:
     await client.write_setting(Setting.I_MAINS_LIMIT_AC1, 7)
     await client.close()
 
+    # The MK3 lost its panel state (say it was unplugged).
+    fake.device.panel_state = (4, 0)
     client = await _client(fake)
     state = await client.poll(full=True)
     assert state.remote_current_limit is None
@@ -142,4 +145,59 @@ async def test_mode_change_keeps_the_remote_limit() -> None:
     assert panel_limit(coordinator) == 9.0  # type: ignore[arg-type]
     coordinator.passthru = True
     assert panel_limit(coordinator) == 0.0  # type: ignore[arg-type]
+    await client.close()
+
+
+async def test_setting_write_keeps_the_panel_state() -> None:
+    """A long-frame session doesn't make the MK3 forget the panel state.
+
+    1.1.6 returned to mode 1 with switch state 0, after which 'D' reported
+    04 00 00 and the remote limit was unknown.
+    """
+    fake = _multiplus(stored=60)
+    client = await _client(fake)
+    await client.set_remote_panel_state(Mode.ON, 10)
+    await client.write_setting(Setting.I_MAINS_LIMIT_AC1, 8)
+    assert fake.device.panel_state == (3, 100)
+    mode1 = [f for f in fake.device.received if f[2] == ord("S") and f[-2] == 0x01]
+    assert mode1[-1][3:8] == bytes([3, 100, 0, 0x01, 0x90])
+    state = await client.poll(full=True)
+    assert state.remote_current_limit == 10.0
+    assert client.active_value_source(Setting.I_MAINS_LIMIT_AC1) == "read"
+    assert state.settings[6] == 8.0
+    await client.close()
+
+
+async def test_new_connection_keeps_the_panel_state() -> None:
+    """Starting up sends the panel state the MK3 holds back to it."""
+    fake = _multiplus(stored=60)
+    client = await _client(fake)
+    await client.set_remote_panel_state(Mode.ON, 9)
+    await client.close()
+    client = await _client(fake)
+    state = await client.poll(full=True)
+    assert state.remote_current_limit == 9.0
+    await client.close()
+
+
+async def test_off_panel_state_is_not_sent_back() -> None:
+    """Only on, charger only and inverter only are sent back."""
+    fake = FakeMK3()
+    client = await _client(fake)
+    await client.set_remote_panel_state(Mode.OFF, 9)
+    await client.write_setting(Setting.I_BAT_BULK, 39)
+    mode1 = [f for f in fake.device.received if f[2] == ord("S") and f[-2] == 0x01]
+    assert mode1[-1][3:6] == bytes([0, 0, 0])
+    await client.close()
+
+
+async def test_write_during_a_poll_is_kept() -> None:
+    """A poll that started before a write doesn't undo it."""
+    fake = _multiplus(stored=60)
+    client = await _client(fake)
+    # A short poll keeps the settings it doesn't read from when it started.
+    await asyncio.gather(
+        client.poll(), client.write_setting(Setting.I_MAINS_LIMIT_AC1, 8)
+    )
+    assert client.state.settings[6] == 8.0
     await client.close()

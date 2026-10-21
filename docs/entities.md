@@ -37,7 +37,7 @@ settings.
 | PowerAssist, Weak AC input, UPS function (binary sensors) | Diagnostic, read-only. With *Monitor and control* there are also switches. |
 | ESS external control (switch), ESS grid setpoint (L1–L3) (number), ESS disable charge / feed-in (switches) | *Monitor and control* with the ESS assistant installed. See [ESS external control](ess-and-bms.md#ess-external-control-beta). |
 | Battery limit charge/discharge voltage/current (numbers) | Only with *Enable battery operational limits*; firmware 415+. See [Battery operational limits](ess-and-bms.md#battery-operational-limits-advanced-beta). |
-| Remote AC input current limit (number) | *Monitor and control*. The limit last sent through the remote panel; unknown after a restart of Home Assistant until it is set. |
+| Remote AC input current limit (number) | *Monitor and control*. The limit last sent through the remote panel; unknown until one is set if the MK3 holds none. |
 | Force absorption / float (buttons) | *Monitor and control*; firmware 400+. |
 | Charge current limit, Configured AC input (2) current limit (numbers) | *Monitor and control*; firmware 412+. RAM only. Attributes *Active value source* and *Stored value*, see [RAM and EEPROM](controls.md#ram-and-eeprom-the-multi-is-the-source). |
 | Allow critical changes (switch) | *Monitor and control*. Off by default; turns itself off after 10 minutes. See [Controlling the Multi](controls.md). |

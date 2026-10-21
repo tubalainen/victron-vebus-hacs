@@ -196,9 +196,11 @@ while the second input of a Quattro is active.
 
 The **Remote AC input current limit** number shows the limit last sent through the
 remote panel, not the limit in effect (that is the *AC input current limit* sensor).
-The Multi doesn't report it; only the MK3 does, and the MK3 forgets it when it is
-opened. So after a restart of Home Assistant the number is **unknown** until a limit or
-mode is set again. Setting it once makes the configured limit readable again. A mode
+The Multi doesn't report it; only the MK3 does, from the last panel state sent to it.
+The integration keeps that state in the MK3 when it changes settings and when Home
+Assistant starts. If the MK3 has none (after it was unplugged, or with 1.1.6 and
+earlier), the number is **unknown** until a limit or mode is set. Setting it once
+makes the configured limit readable again. A mode
 change keeps the remote limit if it is known, otherwise it sends the limit in effect,
 which leaves the limit unchanged.
 

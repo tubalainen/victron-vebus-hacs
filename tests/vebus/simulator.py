@@ -208,6 +208,13 @@ class SimulatedMultiPlus:
             return [encode_frame(ord("D"), [switch, *_u16(limit), 0, 0])]
         if cmd == "S":
             flags = data[4] if len(data) > 4 else 0
+            if len(data) >= 3:
+                # The MK3 holds the panel state of every 'S'; switch state 0
+                # makes it forget it (seen on MK3 1170216).
+                if data[0]:
+                    self.panel_state = (data[0], data[1] | data[2] << 8)
+                else:
+                    self.panel_state = (4, 0)
             if data and data[0] and not flags & 0x10:
                 self._apply_switch(data)
             if len(data) > 6:
@@ -236,7 +243,6 @@ class SimulatedMultiPlus:
         reg |= 0x01 * charge | 0x02 * invert | 0x10 * charge | 0x20 * invert
         self.switch_register = reg
         limit = data[1] | data[2] << 8
-        self.panel_state = (data[0], limit)
         if limit < 0x8000:
             self.current_limit = max(self.min_limit, min(limit, self.max_limit))
 
@@ -430,8 +436,6 @@ class FakeMK3:
     async def __call__(self, url: str) -> tuple[asyncio.StreamReader, FakeWriter]:
         if self.fail_open:
             raise FileNotFoundError(url)
-        # Opening the MK3 forgets the panel state it held.
-        self.device.panel_state = (4, 0)
         reader = asyncio.StreamReader()
         writer = FakeWriter(self.device, reader)
         self.writers.append(writer)

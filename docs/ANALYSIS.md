@@ -90,6 +90,7 @@ was used where it agrees with the specification.
 | **1.1.4** | RAM-only writes acknowledged with 0x88 are accepted when ReadSetting reports the stored value. The value written is kept (`ram_values`) and used for polling, flag changes and *Save settings permanently* until a restart or save; the number entities show the stored value as an attribute. |
 | **1.1.5** | The Multi is the only source. Setting numbers show where the value comes from (`active_value_source`) and the stored value. What ReadSetting reports (RAM or EEPROM) is learnt from writes, never kept across connections. The configured AC input limit in effect is read from the MasterMultiLED frame while it is below the remote limit (`D`). *Save settings permanently* skips values equal to the stored ones. The remote limit number shows the `D` value. |
 | **1.1.6** | `D` reports the panel state last sent to the MK3, which is `04 00 00` after opening it: it counts only if its mode is the remote mode the device reports, and "off, 0 A" never counts. The remote limit number is unknown until a panel state is sent. A limit in effect above the stored setting 6 shows that ReadSetting reports EEPROM and that RAM differs; the number is then unknown with a lower bound (`active_minimum`). Mode changes keep the known remote limit. |
+| **1.1.7** | Returning to Winmon mode 1 (after a long-frame session and at start-up) sends the panel state read with `D` back to the MK3 (on, charger only or inverter only; flag 0x10 as before), so the MK3 keeps it. A poll no longer undoes a setting write or a refresh made while it ran. Setting ranges missing at start-up are read up to three times. |
 
 ## 5. Things to verify on real hardware
 
@@ -202,6 +203,12 @@ Results from a real MultiPlus-II (firmware 2611556, MK3 1170216), 1.1.2:
   before any panel state was sent, and sending it back with flags 0xD0 (do not send
   the panel state) didn't change the Multi. So `D` is the MK3's own copy of the last
   `S`, not a value read from the Multi.
+- **What clears `D`, 1.1.6:** with the remote limit set to 10 A and then two setting
+  writes, the second write session starts with `D` = `04 00 00`. The only `S` sent in
+  between is the return to mode 1 at the end of the first session, `00 00 00 01 90 00
+  01`: an `S` with switch state 0 makes the MK3 forget its panel state. The same frame
+  is sent at start-up, which explains the 1.1.5 result. 1.1.7 sends the state read with
+  `D` instead of zeros.
 - **Setting 9** (absorption time) reports scale 60: the value is in minutes (8 → 480).
 - **Setting 10** (charge characteristic) is 3 with VictronConnect showing "Fixed +
   storage", and xcellsior saw 1 for "fixed": read as a bit field (bit 0 fixed, bit 1
