@@ -181,6 +181,24 @@ S_MODE1_DATA = (
     0x00,
     S_FLAGS_EXT0_WINMON_MODE1,
 )
+# Switch states sent back to the interface to keep its panel state: on,
+# charger only, inverter only (never off).
+PANEL_STATES_KEPT = (1, 2, 3)
+
+
+def _mode1_data(panel: bytes | None) -> tuple[int, ...]:
+    """Return 'S' data selecting Winmon mode 1 that keeps the panel state.
+
+    An 'S' with switch state 0 makes the MK3 forget the panel state it holds
+    ('D' then reports 04 00 00; seen on MK3 1170216 after every setting
+    write). So the state read with 'D' is sent back, as the switch to long
+    frames does. The device doesn't get it either way (flag 0x10).
+    """
+    if panel is not None and len(panel) >= 3 and panel[0] in PANEL_STATES_KEPT:
+        return (panel[0], panel[1], panel[2], *S_MODE1_DATA[3:])
+    return S_MODE1_DATA
+
+
 # Errors ignored while closing the connection.
 CLOSE_ERRORS: tuple[type[BaseException], ...] = (
     *CONNECTION_ERRORS,
@@ -314,6 +332,12 @@ class VeBusClient:
         self.active_minimum: dict[int, int] = {}
         self.remote_state_supported = True
         self._remote_state_failures = 0
+        # The panel state read with 'D' at the start of the last long-frame
+        # session, sent back when returning to mode 1.
+        self._held_panel: bytes | None = None
+        # Changes made while a poll runs, which its result must not undo.
+        self._stored_since_poll: set[int] = set()
+        self._config_since_poll = False
         # The last setting write: reply, read back and the frames of its
         # long-frame session, for diagnostics.
         self.last_write: dict[str, Any] | None = None
@@ -484,7 +508,8 @@ class VeBusClient:
         """Restore short frames and the address before a request (lock held)."""
         if self._long_frames:
             await self._request(
-                encode_frame(CMD_STATE, S_MODE1_DATA), _mk_reply(CMD_STATE)
+                encode_frame(CMD_STATE, _mode1_data(self._held_panel)),
+                _mk_reply(CMD_STATE),
             )
             self._long_frames = False
         await self._ensure_address()
@@ -539,8 +564,12 @@ class VeBusClient:
 
         Other tools such as VictronConnect may leave the interface in mode 2.
         Flags 0x90 = absolute current limit format and do not send panel state.
+        The panel state the interface holds is sent back (see ``_mode1_data``).
         """
-        await self._command(CMD_STATE, S_MODE1_DATA, _mk_reply(CMD_STATE))
+        panel: bytes | None = None
+        with contextlib.suppress(VeBusTimeoutError):
+            panel = bytes((await self.read_panel_state_raw())[0:3])
+        await self._command(CMD_STATE, _mode1_data(panel), _mk_reply(CMD_STATE))
 
     async def set_remote_panel_state(
         self, mode: Mode, current_limit: float | None = None
@@ -568,6 +597,14 @@ class VeBusClient:
         assert frame is not None
         return frame.data[0]
 
+    async def read_panel_state_raw(self) -> bytes:
+        """Return the data of the interface's 'D' reply."""
+        frame = await self._command(
+            CMD_INTERFACE_STATE, b"", _mk_reply(CMD_INTERFACE_STATE, 3)
+        )
+        assert frame is not None
+        return bytes(frame.data)
+
     async def read_panel_state(self) -> tuple[int, int]:
         """Read the remote panel state the interface holds ('D').
 
@@ -575,11 +612,8 @@ class VeBusClient:
         panel state sent to the interface, not a value read from the device:
         until one is sent the MK3 reports 04 00 00 (see ``_panel_limit``).
         """
-        frame = await self._command(
-            CMD_INTERFACE_STATE, b"", _mk_reply(CMD_INTERFACE_STATE, 3)
-        )
-        assert frame is not None
-        return frame.data[0], frame.data[1] | frame.data[2] << 8
+        data = await self.read_panel_state_raw()
+        return data[0], data[1] | data[2] << 8
 
     async def read_led(self) -> LedInfo:
         """Read the LED status ('L')."""
@@ -831,6 +865,7 @@ class VeBusClient:
                 encode_frame(CMD_INTERFACE_STATE), _mk_reply(CMD_INTERFACE_STATE, 3)
             )
             assert reply is not None
+            self._held_panel = bytes(reply.data[0:3])
             self._long_frames = True
             await self._request(
                 encode_frame(CMD_STATE, [*reply.data[0:3], *S_LONG_FRAMES_TAIL]),
@@ -842,7 +877,8 @@ class VeBusClient:
                 for _ in range(2):
                     try:
                         await self._request(
-                            encode_frame(CMD_STATE, S_MODE1_DATA), _mk_reply(CMD_STATE)
+                            encode_frame(CMD_STATE, _mode1_data(self._held_panel)),
+                            _mk_reply(CMD_STATE),
                         )
                     except VeBusError:
                         continue
@@ -879,16 +915,30 @@ class VeBusClient:
             return
         async with self._long_frame_session():
             for setting in missing:
-                try:
-                    reply = await self._winmon_locked(
-                        WinmonCommand.GET_SETTING_INFO, setting & 0xFF, setting >> 8
-                    )
-                    info = decode_setting_info(reply, long_form=True)
-                except (VeBusTimeoutError, VeBusNotSupportedError, DecodeError) as err:
-                    _LOGGER.debug("Setting info %s not available: %s", setting, err)
-                    continue
-                if info is not None:
+                # A reply can be lost or cut short now and then: try again.
+                for _ in range(INIT_ATTEMPTS):
+                    try:
+                        reply = await self._winmon_locked(
+                            WinmonCommand.GET_SETTING_INFO, setting & 0xFF, setting >> 8
+                        )
+                        info = decode_setting_info(reply, long_form=True)
+                    except VeBusNotSupportedError as err:
+                        _LOGGER.debug("Setting info %s not available: %s", setting, err)
+                        break
+                    except (VeBusTimeoutError, DecodeError) as err:
+                        _LOGGER.debug("Setting info %s not available: %s", setting, err)
+                        continue
+                    if info is None:
+                        break
                     self.setting_info[setting] = info
+                    if info.minimum is not None and info.maximum is not None:
+                        break
+                else:
+                    _LOGGER.warning(
+                        "The range of setting %s could not be read; it can't be"
+                        " changed until the integration is reloaded",
+                        setting,
+                    )
 
     def _check_persistent_rate(self, setting: int) -> None:
         last = self._persistent_writes.get(setting)
@@ -1009,6 +1059,7 @@ class VeBusClient:
         if info is not None and setting in SLOW_SETTINGS:
             settings[setting] = info.decode(raw)
         self.state = replace(self.state, settings=settings, settings_raw=settings_raw)
+        self._stored_since_poll.add(setting)
 
     async def write_setting(
         self, setting: int, value: float, *, persistent: bool = False
@@ -1509,6 +1560,8 @@ class VeBusClient:
         With ``full`` every value is read. Raises VeBusTimeoutError if the
         essential DC and AC frames cannot be read.
         """
+        self._stored_since_poll.clear()
+        self._config_since_poll = False
         state = replace(
             self.state,
             ac=dict(self.state.ac),
@@ -1612,6 +1665,15 @@ class VeBusClient:
                             address, firmware=self.unit_firmware.get(address)
                         )
 
+        # A write or refresh during the poll is newer than what it read.
+        for setting in self._stored_since_poll:
+            if setting in self.state.settings:
+                state.settings[setting] = self.state.settings[setting]
+            if setting in self.state.settings_raw:
+                state.settings_raw[setting] = self.state.settings_raw[setting]
+        if self._config_since_poll:
+            state.config = self.state.config
+            state.remote_current_limit = self.state.remote_current_limit
         state.timestamp = time.monotonic()
         self.state = state
         return state
@@ -1637,6 +1699,7 @@ class VeBusClient:
         await self._poll_remote_limit(state)
         self._read_input_limit(state)
         self.state = state
+        self._config_since_poll = True
         return self.state
 
     async def _poll_remote_limit(self, state: VeBusState) -> None:
