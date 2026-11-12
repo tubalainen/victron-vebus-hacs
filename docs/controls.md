@@ -264,6 +264,33 @@ What the switches do:
   (flag 3); the integration changes only the UPS bit, as VEConfigure was seen to do.
   This hasn't been verified on hardware.
 
+### Solar & wind priority and the sustain voltage
+
+With solar & wind priority on, the Multi on shore power runs in what Victron calls
+**sustain** mode. The grid only keeps the battery above the *Solar & wind priority
+voltage*; charging beyond that is left to solar or wind chargers on the battery (for
+example an MPPT). After the *repeated absorption interval* (7 days by default), the
+Multi charges the battery fully once and then returns to sustain. AC loads are still
+powered from the grid. Victron starts sustain when shore power is connected, and a
+charge that is already running is not stopped (seen on a MultiPlus-II).
+
+The sustain voltage decides how full the battery is kept. Victron recommends:
+
+| Battery | 12 V | 24 V | 48 V | Kept at about |
+|---|---|---|---|---|
+| Lithium (LiFePO4) | 13.0 V | 26.0 V | 52.0 V | 30% |
+| Lead (AGM, gel) | float − 0.2 V | float − 0.3 V | float − 0.4 V | 95% |
+
+**With lead batteries, don't use the lithium value.** It leaves them partly
+discharged, which shortens their life (sulfation) and halves the reserve for a grid
+outage. With the float voltage at 27.2 V, for example, a 24 V lead bank needs 26.9 V.
+Set the voltage before switching the priority on. With lead the gain is small anyway,
+since solar can only take over the last few percent. Also mind the total charge current: the
+Multi and the solar charger don't coordinate without DVCC, so together they can exceed
+what the battery allows.
+
+See Victron's [Solar & Wind Priority manual](https://www.victronenergy.com/media/pg/Solar_&_Wind_Priority/en/configuration.html).
+
 Requirements:
 
 - Device firmware 412 or newer for setting changes, 400 for forcing a charge state,
