@@ -64,6 +64,7 @@
     },
     "error": {
       "cannot_connect": "Failed to open the serial port.",
+      "device_not_found": "This device path doesn't exist in Home Assistant. If Home Assistant runs in Docker, the path must be mapped into the container (see the installation guide); /dev/serial/by-id is often not there.",
       "no_response": "The interface or the VE.Bus device did not respond. Make sure the device is switched on and connected to the MK3.",
       "unknown": "Unexpected error.",
       "acknowledge_required": "Tick the box to confirm that you have read and understood the warning."
