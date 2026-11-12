@@ -6,7 +6,10 @@ name: Release
 # notes and victron_vebus.zip attached. If docs/releases/vX.Y.Z.md exists, it
 # is the release text and the generated notes are added below it. Versions
 # containing a "-" (0.2.0-beta1) are published as pre-releases. Pushing a v* tag by hand, or publishing a
-# release in the GitHub UI, still works and gets the zip attached.
+# release in the GitHub UI, still works and gets the zip attached. Relative
+# links in the release text are made absolute (to main) so they work on the
+# release page. Run the workflow by hand with "notes_for_tag" to do that for the
+# text of an existing release; nothing else of it changes.
 
 on:
   push:
@@ -20,6 +23,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      notes_for_tag:
+        description: Only make the links in this existing release's text absolute (e.g. v1.1.15)
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -31,6 +39,7 @@ concurrency:
 jobs:
   release:
     name: Publish release
+    if: github.event_name != 'workflow_dispatch' || inputs.notes_for_tag == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -48,7 +57,11 @@ jobs:
           if [[ "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
           echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
           notes="docs/releases/${tag}.md"
-          if [[ -f "$notes" ]]; then echo "body_path=${notes}" >> "$GITHUB_OUTPUT"; fi
+          if [[ -f "$notes" ]]; then
+            cp "$notes" "${RUNNER_TEMP}/notes.md"
+            .github/scripts/absolute_links.sh "${RUNNER_TEMP}/notes.md" "$GITHUB_REPOSITORY"
+            echo "body_path=${RUNNER_TEMP}/notes.md" >> "$GITHUB_OUTPUT"
+          fi
 
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             # Tag pushed or release published by hand: the tag must match.
@@ -80,3 +93,23 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           files: victron_vebus.zip
+
+  notes:
+    name: Make release text links absolute
+    if: github.event_name == 'workflow_dispatch' && inputs.notes_for_tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Rewrite the links of the existing release text
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.notes_for_tag }}
+        run: |
+          body="${RUNNER_TEMP}/body.md"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body > "$body"
+          .github/scripts/absolute_links.sh "$body" "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$body"
+          echo "Release text of $TAG updated."
