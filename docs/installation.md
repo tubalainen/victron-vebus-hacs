@@ -23,6 +23,38 @@
    if you are not sure what it does.** You can switch between the two later with
    *Settings → Devices & services → Victron VE.Bus → ⋮ → Reconfigure*.
 
+## Device path and Docker
+
+A path such as `/dev/ttyUSB0` can change when USB devices are plugged in or the host
+restarts. A `/dev/serial/by-id/...` path always names the same MK3. The integration
+stores the by-id path when Home Assistant can see it. To change the path later, use
+*Reconfigure*. The serial number of the MK3 must stay the same.
+
+**Home Assistant in Docker (Container):** inside the container a device exists only if it
+is mapped in `devices:`. There are two ways to give the MK3 a stable name:
+
+```yaml
+# docker-compose.yml
+services:
+  homeassistant:
+    devices:
+      # A: the by-id path, under the same name inside the container
+      - /dev/serial/by-id/usb-VictronEnergy_MK3-USB_Interface_HQ0000XXXXX-if00-port0
+      # B: or the by-id path under a fixed short name
+      # - /dev/serial/by-id/usb-VictronEnergy_MK3-USB_Interface_HQ0000XXXXX-if00-port0:/dev/ttyMK3
+```
+
+Docker resolves the link when the container starts and creates a device node of its own
+at the container path. That node is not a link, so Home Assistant can't read the MK3's
+serial number from it. Since 1.1.15 the integration recognizes the by-id name
+(it contains the serial number) and accepts the path in *Reconfigure*. With B, enter
+`/dev/ttyMK3`. Up to 1.1.14 *Reconfigure* wrongly reported "a different MK3
+interface" for a path without a readable serial number. A path that isn't mapped
+doesn't exist in the container, and setup and *Reconfigure* say so.
+
+If the same MK3 is also mapped as `/dev/ttyUSB0`, both names lead to the same device;
+the integration uses only the path it is configured with.
+
 ## Options
 
 | Option | Default | Description |

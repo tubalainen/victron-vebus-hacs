@@ -28,6 +28,15 @@ def fast_timeouts() -> Generator[None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def device_paths_exist() -> Generator[None]:
+    """Device paths in the tests exist unless a test says otherwise."""
+    with patch(
+        "custom_components.victron_vebus.config_flow._path_exists", return_value=True
+    ):
+        yield
+
+
 @pytest.fixture
 def fake_mk3() -> Generator[FakeMK3]:
     """Replace the serial port with a simulated MK3 and MultiPlus-II."""

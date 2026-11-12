@@ -242,6 +242,124 @@ async def test_reconfigure(
     assert config_entry.data[CONF_DEVICE] == "/dev/serial/by-id/moved"
 
 
+def _entry_on(device: str) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Victron VE.Bus",
+        unique_id="HQ123",
+        data={CONF_DEVICE: device},
+        options={},
+    )
+
+
+async def _reconfigure(
+    hass: HomeAssistant, entry: MockConfigEntry, device: str, serial: str | None
+):
+    """Reconfigure to a device path whose USB serial number is given (or None)."""
+    by_id, from_path = _patch_usb(by_id=device, serial=serial)
+    result = await entry.start_reconfigure_flow(hass)
+    with (
+        by_id,
+        from_path,
+        patch("custom_components.victron_vebus.async_setup_entry", return_value=True),
+    ):
+        return await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_DEVICE: device, CONF_USAGE: USAGE_MONITOR}
+        )
+
+
+async def test_reconfigure_to_by_id_without_serial_number(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """As in Docker: the serial number can't be read, the by-id name has it."""
+    entry = _entry_on("/dev/ttyUSB0")
+    entry.add_to_hass(hass)
+    result = await _reconfigure(hass, entry, DEVICE_PATH, serial=None)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_DEVICE] == DEVICE_PATH
+    assert entry.unique_id == "HQ123"
+
+
+async def test_reconfigure_without_serial_number_is_probed(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """An unknown serial number is no proof of another interface."""
+    entry = _entry_on("/dev/ttyUSB0")
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.victron_vebus.config_flow.async_probe"
+    ) as probe:
+        result = await _reconfigure(hass, entry, "/dev/ttyACM0", serial=None)
+    assert result["reason"] == "reconfigure_successful"
+    probe.assert_awaited_once_with("/dev/ttyACM0")
+    assert entry.unique_id == "HQ123"
+
+
+async def test_reconfigure_to_another_serial_number_is_refused(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """A serial number that is known and different is another interface."""
+    entry = _entry_on("/dev/ttyUSB0")
+    entry.add_to_hass(hass)
+    other = "/dev/serial/by-id/usb-VictronEnergy_MK3-USB_Interface_HQ999-if00-port0"
+    result = await _reconfigure(hass, entry, other, serial="HQ999")
+    assert result["reason"] == "unique_id_mismatch"
+    assert entry.data[CONF_DEVICE] == "/dev/ttyUSB0"
+
+
+async def test_reconfigure_to_a_missing_path(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """A path that doesn't exist (not mapped into the container) says so."""
+    entry = _entry_on("/dev/ttyUSB0")
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.victron_vebus.config_flow._path_exists", return_value=False
+    ):
+        result = await _reconfigure(hass, entry, DEVICE_PATH, serial=None)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "device_not_found"}
+    assert entry.data[CONF_DEVICE] == "/dev/ttyUSB0"
+
+
+async def test_reconfigure_to_another_name_of_the_same_port(
+    hass: HomeAssistant, fake_mk3: FakeMK3
+) -> None:
+    """The port in use isn't opened again under another name (Docker node)."""
+    entry = _entry_on("/dev/ttyUSB0")
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.victron_vebus.config_flow._same_node",
+            return_value=True,
+        ),
+        patch("custom_components.victron_vebus.config_flow.async_probe") as probe,
+    ):
+        result = await _reconfigure(hass, entry, DEVICE_PATH, serial="HQ123")
+    assert result["reason"] == "reconfigure_successful"
+    probe.assert_not_awaited()
+    assert entry.data[CONF_DEVICE] == DEVICE_PATH
+
+
+async def test_manual_path_missing(hass: HomeAssistant, fake_mk3: FakeMK3) -> None:
+    """Setting up with a path that doesn't exist explains why."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "manual"}
+    )
+    with patch(
+        "custom_components.victron_vebus.config_flow._path_exists", return_value=False
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_DEVICE: "/dev/ttyUSB7"}
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "device_not_found"}
+
+
 async def test_reconfigure_to_control_and_back(
     hass: HomeAssistant, config_entry: MockConfigEntry
 ) -> None:
@@ -298,3 +416,26 @@ async def test_options_flow(
         await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert config_entry.options == {CONF_SCAN_INTERVAL: 5, CONF_ALARM_ISSUES: False}
+
+
+def test_same_node_by_device_number(tmp_path) -> None:
+    """Two device nodes with the same numbers are the same device."""
+    from custom_components.victron_vebus.config_flow import _same_node
+
+    first, second, other = (tmp_path / name for name in ("a", "b", "c"))
+    for path in (first, second, other):
+        path.touch()
+    stats = {
+        str(first): (0o20660, 0x1880),
+        str(second): (0o20660, 0x1880),
+        str(other): (0o20660, 0x1881),
+    }
+
+    def fake_stat(path):
+        mode, rdev = stats[str(path)]
+        return type("S", (), {"st_mode": mode, "st_rdev": rdev})()
+
+    with patch("custom_components.victron_vebus.config_flow.os.stat", fake_stat):
+        assert _same_node(str(first), str(second))
+        assert not _same_node(str(first), str(other))
+    assert not _same_node(str(first), str(tmp_path / "missing"))

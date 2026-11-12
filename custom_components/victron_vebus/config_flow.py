@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import stat
 from typing import Any
 
 from homeassistant.components import usb
@@ -114,15 +116,74 @@ def _is_local_path(device: str) -> bool:
     return device.startswith("/") or "://" not in device
 
 
-async def _async_unique_id(hass: HomeAssistant, device: str) -> tuple[str, str]:
-    """Return (stable device path, unique id) for a device path or URL."""
+SERIAL_BY_ID = "/dev/serial/by-id/"
+
+
+async def _async_serial_number(
+    hass: HomeAssistant, device: str
+) -> tuple[str, str | None]:
+    """Return (stable device path, USB serial number or None if unknown)."""
     if not _is_local_path(device):
-        return device, device
+        return device, None
     by_id = await hass.async_add_executor_job(usb.get_serial_by_id, device)
     usb_device = await hass.async_add_executor_job(usb.usb_device_from_path, by_id)
     if usb_device is not None and usb_device.serial_number:
         return by_id, usb_device.serial_number
-    return by_id, by_id
+    return by_id, None
+
+
+async def _async_unique_id(hass: HomeAssistant, device: str) -> tuple[str, str]:
+    """Return (stable device path, unique id) for a device path or URL."""
+    device, serial = await _async_serial_number(hass, device)
+    return device, serial or device
+
+
+def _path_exists(path: str) -> bool:
+    return os.path.exists(path)
+
+
+async def _async_device_missing(hass: HomeAssistant, device: str) -> bool:
+    """Return True for a local device path that doesn't exist (e.g. in Docker)."""
+    if not _is_local_path(device):
+        return False
+    return not await hass.async_add_executor_job(_path_exists, device)
+
+
+def _names_serial(device: str, serial: str) -> bool:
+    """Return True if a /dev/serial/by-id name contains the serial number.
+
+    The by-id name is how udev names the interface, e.g.
+    usb-VictronEnergy_MK3-USB_Interface_HQ2552GPGZM-if00-port0.
+    """
+    if not device.startswith(SERIAL_BY_ID):
+        return False
+    name = device.removeprefix(SERIAL_BY_ID)
+    return f"_{serial}-" in name or name.endswith(f"_{serial}")
+
+
+def _same_node(first: str, second: str) -> bool:
+    """Return True if two paths are the same device.
+
+    Docker creates a separate device node for each mapped path, e.g. for
+    /dev/serial/by-id/... next to /dev/ttyUSB0, so compare the device numbers,
+    not where links point.
+    """
+    try:
+        first_stat, second_stat = os.stat(first), os.stat(second)
+    except OSError:
+        return False
+    if stat.S_ISCHR(first_stat.st_mode) and stat.S_ISCHR(second_stat.st_mode):
+        return first_stat.st_rdev == second_stat.st_rdev
+    return os.path.realpath(first) == os.path.realpath(second)
+
+
+async def _async_same_device(hass: HomeAssistant, first: str, second: str) -> bool:
+    """Return True if two local paths lead to the same device."""
+    if first == second:
+        return True
+    if not (_is_local_path(first) and _is_local_path(second)):
+        return False
+    return await hass.async_add_executor_job(_same_node, first, second)
 
 
 def _is_path_unique_id(unique_id: str | None) -> bool:
@@ -193,6 +254,9 @@ class VeBusConfigFlow(ConfigFlow, domain=DOMAIN):
         self, device: str, errors: dict[str, str]
     ) -> ConfigFlowResult | None:
         device = device.strip()
+        if await _async_device_missing(self.hass, device):
+            errors["base"] = "device_not_found"
+            return None
         device, unique_id = await _async_unique_id(self.hass, device)
         await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured(updates={CONF_DEVICE: device})
@@ -301,16 +365,25 @@ class VeBusConfigFlow(ConfigFlow, domain=DOMAIN):
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
         if user_input is not None:
-            device, unique_id = await _async_unique_id(
-                self.hass, user_input[CONF_DEVICE].strip()
-            )
+            device = user_input[CONF_DEVICE].strip()
+            if await _async_device_missing(self.hass, device):
+                errors["base"] = "device_not_found"
+        if user_input is not None and not errors:
+            device, serial = await _async_serial_number(self.hass, device)
             if not _is_path_unique_id(entry.unique_id):
                 # Identified by the USB serial number: must be the same interface.
-                await self.async_set_unique_id(unique_id)
-                self._abort_if_unique_id_mismatch()
+                # A serial number that can't be read (e.g. in Docker) is no proof
+                # of another interface; the by-id name may still carry it.
+                if serial is None and _names_serial(device, str(entry.unique_id)):
+                    serial = entry.unique_id
+                if serial is not None:
+                    await self.async_set_unique_id(serial)
+                    self._abort_if_unique_id_mismatch()
             try:
                 # The running integration holds the port; only probe a new one.
-                if device != entry.data[CONF_DEVICE]:
+                if not await _async_same_device(
+                    self.hass, device, entry.data[CONF_DEVICE]
+                ):
                     await async_probe(device)
             except ProbeError as err:
                 errors["base"] = err.args[0]
@@ -318,7 +391,7 @@ class VeBusConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._reconfigure_data = {
                     "unique_id": entry.unique_id
                     if not _is_path_unique_id(entry.unique_id)
-                    else unique_id,
+                    else serial or device,
                     "data_updates": {CONF_DEVICE: device},
                 }
                 controls = user_input[CONF_USAGE] == USAGE_CONTROL
