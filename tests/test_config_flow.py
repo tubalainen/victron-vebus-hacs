@@ -11,6 +11,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.usb import UsbServiceInfo
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.victron_vebus.config_flow import _same_node
 from custom_components.victron_vebus.const import (
     CONF_ALARM_ISSUES,
     CONF_ENABLE_BATTERY_LIMITS,
@@ -287,9 +288,7 @@ async def test_reconfigure_without_serial_number_is_probed(
     """An unknown serial number is no proof of another interface."""
     entry = _entry_on("/dev/ttyUSB0")
     entry.add_to_hass(hass)
-    with patch(
-        "custom_components.victron_vebus.config_flow.async_probe"
-    ) as probe:
+    with patch("custom_components.victron_vebus.config_flow.async_probe") as probe:
         result = await _reconfigure(hass, entry, "/dev/ttyACM0", serial=None)
     assert result["reason"] == "reconfigure_successful"
     probe.assert_awaited_once_with("/dev/ttyACM0")
@@ -420,8 +419,6 @@ async def test_options_flow(
 
 def test_same_node_by_device_number(tmp_path) -> None:
     """Two device nodes with the same numbers are the same device."""
-    from custom_components.victron_vebus.config_flow import _same_node
-
     first, second, other = (tmp_path / name for name in ("a", "b", "c"))
     for path in (first, second, other):
         path.touch()
